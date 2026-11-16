@@ -17,32 +17,41 @@ For scientific analysis, also provide the approved Reader Spec and Build
 Plan, task review summary, source-data identity and qualification evidence,
 and final test and smoke-check records. Ask this one reviewer to trace
 requirements through tasks, code, and evidence; check scientific and
-cross-task fidelity; and write one report using
-[Building Audit template](../../../templates/building-audit-report.md) under
-the functional unit's `audits/building/`. A code-quality verdict alone is
-not the scientific Building Audit.
+cross-task fidelity; and write the initial technical review to
+`<workspace>/final-review-initial.md`. This is SDD working evidence, not a
+formal Building Audit: do not assign it an `audit_id`, write it under
+`audits/building/`, or use it to request Runtime authorization. A code-quality
+verdict alone is not the scientific Building Audit.
 
-If the final whole-branch review returns findings, dispatch ONE fix subagent
-with the complete findings list — not one fixer per finding.
-Per-finding fixers each rebuild context and re-run suites; a real
-session's final-review fix wave cost more than all its tasks combined.
-Then run exactly one scoped re-review of the fix wave
-(`bash scripts/review-package PLAN_FILE FIX_BASE HEAD` by its absolute path,
-from the working tree you're executing in, over the fix range,
-[re-review-prompt.md](../re-review-prompt.md)).
-Record residual findings as in the fix loop's breaker
-([fix-loop.md](fix-loop.md)). Non-blocking limitations remain explicit in
-the audit report for user decision. A substantive or load-bearing finding
-keeps the report at `BLOCKED` or `CHANGES_REQUIRED`; do not mark the
-implementation accepted. There is no second automatic fix wave.
+If the initial review finds implementation defects fixable within the
+approved Reader Spec and Build Plan, dispatch ONE fix subagent with the
+complete findings list — not one fixer per finding. Per-finding fixers each
+rebuild context and re-run suites; a real session's final-review fix wave
+cost more than all its tasks combined. Then run exactly one scoped re-review
+of the fix wave (`bash scripts/review-package PLAN_FILE FIX_BASE HEAD` by its
+absolute path, from the working tree you're executing in, over the fix
+range, [re-review-prompt.md](../re-review-prompt.md)); save the re-review in
+the same SDD workspace. This is the only automatic whole-branch fix wave.
+If the finding requires a material scientific or Build Plan decision, do
+not auto-fix it; carry it to the formal report for user decision. Record
+residual findings as in the fix loop's breaker ([fix-loop.md](fix-loop.md)).
+A substantive finding still open after re-review remains `BLOCKED` or
+`CHANGES_REQUIRED`; no second automatic fix wave.
 
 ### Finish
 
-Before stopping, carry every ledger `Ruling:`, deferred finding, and open
-issue into the Building Audit report, with its evidence and cost if wrong.
-Record the Reader Spec and Build Plan hashes, the reviewed code commit,
-the diff range, and `audit_user_decision: pending`. Present the report and
-stop for the user's decision on this exact version. Do not merge, delete
-the temporary workspace, or start Runtime in the same turn. Retention and
-deletion of the temporary workspace are still awaiting the user's decision;
-do not clean it up automatically after audit acceptance.
+After a clean initial review, or after the one fix wave and scoped re-review,
+have an independent reviewer synthesize ONE formal report using the
+[Building Audit template](../../../templates/building-audit-report.md) under
+the functional unit's `audits/building/`. Include the initial review, any
+fix and re-review evidence, every ledger `Ruling:`, deferred finding, and
+open issue with its cost if wrong. Record the Reader Spec and Build Plan
+hashes, current reviewed code commit, full branch and fix diff ranges where
+applicable, and `audit_user_decision: pending`. If science/plan decisions or
+substantive defects remain, report `BLOCKED` or `CHANGES_REQUIRED`; do not
+claim acceptance. The creation of this formal report is the Building Audit
+Gate: present it and STOP for the user's decision on this exact version.
+Never auto-fix after a formal report with pending user decision. Do not
+merge, delete the temporary workspace, or start Runtime in the same turn.
+Retention and deletion of the temporary workspace still await the user's
+decision; do not clean it up automatically after audit acceptance.

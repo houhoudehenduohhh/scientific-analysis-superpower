@@ -4,7 +4,7 @@
 >
 > | 检查项 | 状态 | 待确认内容 |
 > |---|---|---|
-> | Task Review 是否需要人工介入 | ☐ 未完成 | 用真实 Build Plan 观察任务粒度和 Agent 裁决质量，再决定自治、逐任务人工裁定或按风险分层。 |
+> | Task Review 是否需要人工介入 | ☑ 已确定 | 每任务由独立 Reviewer 审查，Agent 在已批准计划内自动修复和复审；每任务最多五轮，仍有实质缺陷则交用户裁决。 |
 > | Building 与 Runtime 的承接 | ☐ 待实测 | 已写入 Runtime、Runtime Audit 和 Runtime Finish 规则；需用实际运行检验性能问题、代码返工及重审路线。 |
 > | SDD 临时文件的裁决 | ☐ 未完成 | 确定任务报告、Review、diff 与账本的保留期限和删除条件。 |
 
@@ -42,15 +42,15 @@ Proposal 先产出并获得用户批准的 Reader Spec 与 Build Plan。Reader S
 
 ## 3. 任务级审查与返工
 
-独立 Task Reviewer 使用 `task-reviewer-prompt.md`，读取该任务 brief、实现报告、完整 diff 和约束，分别给出**任务契约符合性**与**代码质量**结论；完整报告保存为临时 `task-N-review.md`。`cannot-verify.md` 处理仅凭 diff 无法证明的要求。Review 意见应先核实：证据成立则修复，依据不足则补查，不成立则记录反证。`receiving-code-review/SKILL.md` 可以辅助核实，但任务级裁决是否交 Agent 自行完成、由用户逐任务裁定，或按风险分层，目前**尚未决定**。要在实际运行一个 Build Plan、看到任务粒度和审查质量后再定。
+独立 Task Reviewer 使用 `task-reviewer-prompt.md`，读取该任务 brief、实现报告、完整 diff 和约束，分别给出**任务契约符合性**与**代码质量**结论；完整报告保存为临时 `task-N-review.md`。`cannot-verify.md` 处理仅凭 diff 无法证明的要求。Review 意见应先核实：证据成立则修复，依据不足则补查，不成立则记录反证。`receiving-code-review/SKILL.md` 可以辅助核实。现已根据首次实际 Building 确定：任务级 Review 由 Agent 在已批准计划内自行核实、修复与复审；每任务最多五轮，实质问题仍未解决时停下交用户裁决。
 
 有实质缺陷时，`fix-loop.md` 将原发现交回实现者；每轮修复提交后，`re-review-prompt.md` 只核对原发现与本轮修复差异，留下 `task-N-re-review.md` 和账本记录。最多五轮；前三轮优先原实现者，后两轮换新实现者并升级能力。五轮后仍有影响后续可信度的缺陷，暂停依赖任务并交用户裁决；非阻断问题可以带证据进入最终报告，由用户决定是否接受。任务级审查不代替整个分支的最终审查。
 
 ## 4. 整体 Building Audit 与人工裁决
 
-全部任务完成后，`final-review.md` 调用 `requesting-code-review/SKILL.md` 的 `code-reviewer.md`，由**一名独立 Reviewer** 对完整分支及批准的 Reader Spec、Build Plan、源数据身份、任务审查和验证记录作追溯审查。最终发现可有一轮集中修复及局部复审。按 `templates/building-audit-report.md` 写入 `audits/building/` 正式报告，绑定 Spec/Plan 哈希、待审提交、差异范围和 `audit_id`，然后停在用户裁决门禁。用户接受当前代码版本及必要的非阻断限制后，才可能进入 Runtime。
+全部任务完成后，`final-review.md` 调用 `requesting-code-review/SKILL.md` 的 `code-reviewer.md`，由**一名独立 Reviewer** 对完整分支及批准的 Reader Spec、Build Plan、源数据身份、任务审查和验证记录作追溯审查。整体初审及至多一轮集中修复、局部复审先保存在 SDD 临时工作区，不作为正式 Building Audit。循环结束后按 `templates/building-audit-report.md` 写入 `audits/building/` 唯一正式报告，绑定 Spec/Plan 哈希、待审提交、差异范围和 `audit_id`，然后停在用户裁决门禁。用户接受当前代码版本及必要的非阻断限制后，才可能进入 Runtime。
 
-正式模板的 `Issues` 保留 Reviewer 的原始发现，`Human Disposition` 记录用户与 Agent 讨论后的逐条决定、证据、验收标准及影响的 Spec/Plan 条目。返工和复审按 `audit_id + finding_id + 新提交` 追溯。人可以接受、调整或不采纳建议，但不能把未裁决意见悄悄写成已批准修复。正式 Audit Gate 的裁决权在用户；任务级人工参与程度留待首次实际使用后裁定。
+正式模板的 `Issues` 保留 Reviewer 的原始发现，`Human Disposition` 记录用户与 Agent 讨论后的逐条决定、证据、验收标准及影响的 Spec/Plan 条目。返工和复审按 `audit_id + finding_id + 新提交` 追溯。人可以接受、调整或不采纳建议，但不能把未裁决意见悄悄写成已批准修复。正式 Audit Gate 的裁决权在用户；任务级 Review 按已确定的 Agent 自动闭环规则执行。
 
 ### 模板来源与可迁移部分
 
@@ -103,7 +103,7 @@ Proposal 先产出并获得用户批准的 Reader Spec 与 Build Plan。Reader S
 ## 7. 辅助 Skill 的边界与待确认事项
 
 - `systematic-debugging/SKILL.md` 的价值是**根因尚不明或连续修复失败时的调查方法**；它不是额外一道 Audit Gate，也不替代正式报告。已知错误和确定修复方向时，可以直接按报告返工。待确认是否把它从 SDD 主路径完全降为按需工具。
-- `receiving-code-review/SKILL.md` 教实现者核实技术反馈，不能自动替用户裁决 Building Audit。任务级审查是否也要逐任务人工裁定**尚未确定**：先用一个真实 Build Plan 观察任务粒度、审查质量和返工成本，再选择 Agent 自治、逐任务人工裁定或按风险分层；若采用人工裁定，必须在继续下个任务前记录决定。
+- `receiving-code-review/SKILL.md` 教实现者核实技术反馈，不能自动替用户裁决 Building Audit。任务级审查已确定由 Agent 自动核实与返工，最多五轮；达到上限仍有实质问题则交用户决定。
 - `verification-before-completion/SKILL.md` 应保留：每次声称“已修复／测试通过／审查完成”都需指明当前提交、实际运行命令、量化结果和未验证范围；它不证明科学方案本身正确。
 - Building Audit 正式模板已按原版 `code-reviewer.md` 的输出格式重排，仍保留科研增补内容。用户明确裁决后由协调 Agent 更新 `Human Disposition`，不改写 Reviewer 原始发现；多轮报告用 `parent_audit_id` 关联。
 
@@ -119,4 +119,4 @@ Proposal 先产出并获得用户批准的 Reader Spec 与 Build Plan。Reader S
 | 技能结构与文档引用 | 已核对 | Skill 校验通过；本地 Markdown 链接检查无断链；相关 Bash 脚本语法检查通过。 |
 | 完整 SDD 实战链条 | 未完成 | 尚未用获批准的真实 Build Plan 跑通实现、提交、任务 Review、返工、整体审查和用户门禁。 |
 
-**待首次试用后裁定：**① Task Review 是否逐任务人工介入；② SDD 临时材料的最终保留／删除条件。Building 与 Runtime 的返工规则已写入 Skill，仍需在实际任务中验证。当前可以开始受控测试，不能把尚未实测的环节称为已验证完成。
+**仍待裁定：**SDD 临时材料的最终保留／删除条件。Task Review 的 Agent 自动闭环已由首次实际 Building 和用户确认；Building 与 Runtime 的承接规则仍需在正式运行中验证。

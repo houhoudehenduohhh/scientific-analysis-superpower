@@ -1,6 +1,6 @@
 # Building Audit 报告模板
 
-> 本模板沿用 Superpowers `requesting-code-review/code-reviewer.md` 的 **Strengths → Issues（Critical / Important / Minor）→ Recommendations → Assessment** 顺序；科研溯源、用户裁决和 Runtime 门禁是本项目增补。
+> 本模板沿用 Superpowers `requesting-code-review/code-reviewer.md` 的 **Strengths → Issues（Critical / Important / Minor）→ Recommendations → Assessment** 顺序；科研溯源、用户裁决和 Runtime 门禁是本项目增补。仅在整体初审和至多一次自动修复／复审结束后生成正式报告；初审记录留在 SDD 临时工作区，不使用本模板的 `audit_id`。
 
 ## Review Context · 审查对象
 
