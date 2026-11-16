@@ -77,8 +77,8 @@ Build Plan 决定任务边界。Building 不重新制定科学方案，而是按
 │  ├─ smoke_test/        # 小样本冒烟测试
 │  └─ logs/              # 运行日志与运行状态
 ├─ results/               # data/、plot/、smoke_test/
-├─ audits/                # building/、runtime/ 的 Markdown 审计报告
-├─ reports/               # building/ 人工任务报告、Runtime Report 与交付说明（Markdown）
+├─ audits/                # building/report/ 人工任务报告及 building/、runtime/ 审计报告
+├─ reports/               # Runtime 事实报告与最终交付说明（Markdown）
 └─ .tmp/sdd/              # 每份 Build Plan 的临时账本、brief、review 与 diff 包
 ```
 
