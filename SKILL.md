@@ -1,12 +1,43 @@
 ---
 name: scientific-analysis-superpower
-description: Use to prepare and approve the Reader Spec and Build Plan for one scientific-analysis functional unit before implementation.
+description: Route one scientific-analysis functional unit through Proposal, Building, independent audits, Runtime, and result delivery with explicit user approval gates.
 ---
 
-# Scientific Analysis: Proposal
+# Scientific Analysis 总调度器
 
-本模块只负责 Proposal。先读 [阶段规则](references/spec-stage.md)，再按其顺序调用 [brainstorming](skills/brainstorming/SKILL.md) 和 [writing-plans](skills/writing-plans/SKILL.md)。两份文档的栏目分别见 [Reader Spec 模板](templates/reader-spec.md) 和 [Build Plan 模板](templates/build-plan.md)。
+本文件只判定当前状态、调用下一个模块并守住门禁。阶段方法由链接的 Skill、`references/` 和 `templates/` 定义。`docs/` 只供人工审阅，不是执行依据。
 
-每个最小功能单元的 `specs/` 中只交付当前 `reader_spec.md` 与 `build_plan.md`。确认源数据身份与资格；按需只读探查，不静默替换输入。两份文档原位迭代，须一起提交用户明确批准。批准前不得开始 Building、正式运行或独立代码审计。Builder check 只用于修订 Reader Spec，不产生第三份正式 Proposal 文件。
+## 每次启动先定位状态
 
-[Proposal 大纲](docs/proposal.md)供人工审阅。`scripts/profile_data.py` 是可选的数据概况工具，其描述性输出不能替代研究判断。
+1. 确定本次**一个最小功能单元**及用户当前目标。若路径未确定且无法从上下文得出，只询问必要的路径或范围。
+2. 读取该单元当前 Reader Spec、Build Plan 的批准状态；Git 代码提交和 SDD 账本；最新 Building Audit 的版本与用户裁决；最新完整 Runtime Report 的 `run_hash`；最新 Runtime Audit 的版本与用户裁决。只读取判断当前阶段所需的文件，不把历史报告的批准沿用到新版本。
+3. 先检查最早未通过的门禁，再按下表选择**唯一当前阶段**。若记录冲突或缺失，停在该门禁补证据；用户说“继续”“运行”，或在一条消息里同时要求计划和执行，都不能代替门禁批准。
+4. 完成当前阶段后，报告本阶段产物、版本、门禁状态和**建议下一步调用的模块**。到达用户门禁时必须停止，不能在同一轮自行批准并越级。
+
+## 阶段路由
+
+| 当前证据 | 当前阶段 → 调用模块 | 本阶段产物与停止点 |
+|---|---|---|
+| 首次规划、两份 Spec 缺失或需实质修订科学方案/数据资格 | **Proposal** → [阶段规则](references/spec-stage.md) → [brainstorming](skills/brainstorming/SKILL.md)（含按需 builder check）→ [writing-plans](skills/writing-plans/SKILL.md)；使用 [Reader Spec](templates/reader-spec.md)、[Build Plan](templates/build-plan.md) 模板 | `specs/reader_spec.md` 与 `specs/build_plan.md`；**停在 Spec Gate**，等用户批准当前两份文件。 |
+| 两份 Spec 已产出，但当前版本尚无用户批准 | **Spec Gate 等待** → 只呈现当前两份文件、未决事项与所需裁决；若用户提出修改则返回 Proposal | 不重新生成或执行 Build；建议用户审阅、批准或提出修订。 |
+| 当前两份 Spec 已获批准；计划任务未完成，或审计要求修改代码 | **Building** → [科研边界](references/build-stage.md) → [subagent-driven-development](skills/subagent-driven-development/SKILL.md)；其中按任务调用 TDD、实现 Agent、独立 Task Reviewer 与修复复审 | 代码、测试、提交及任务审查证据。SDD 任务全完后按其流程衔接整体 Review；遇方案/计划实质变更或五轮后仍有实质缺陷则停下交用户裁决。 |
+| 任务均完成，但当前提交尚无 Building Audit；或代码修复后旧报告已失效 | **Building Audit** → [SDD 最终 Review](skills/subagent-driven-development/references/final-review.md) → [requesting-code-review](skills/requesting-code-review/SKILL.md) 的独立 Reviewer；使用 [Building Audit 模板](templates/building-audit-report.md) | 一份绑定当前 Spec、Plan 和代码提交的正式报告；**停在 Building Audit Gate**，等用户审阅、接受并在看到报告后授权运行。已完成的任务不重新派发。 |
+| 当前 Building Audit 已生成，但用户尚未接受或尚未在看过报告后授权运行 | **Building Audit Gate 等待** → 呈现问题、限制与 `audit_id`；按用户裁决返回 Proposal/Building 或进入 Runtime | 不修复后自行放行，不重用其他版本的审计。 |
+| 当前 Building Audit 已接受且用户已授权运行；尚无该版本的完整运行结果，或运行条件问题需要重跑 | **Runtime** → [运行规则](references/runtime-stage.md) 与 [Runtime Report 模板](templates/runtime-report.md) | 正式结果和绑定输入、代码、配置、输出的 `run_hash`；生成事实性 Runtime Report 后停止。失败或部分完成时按原因留在 Runtime 或返回上游。 |
+| 当前完整 Runtime Report 已形成，且该 `run_hash` 尚无有效 Runtime Audit | **Runtime Audit** → [审查规则](references/runtime-audit.md) → [独立 Reviewer 提示词](templates/runtime-auditor-prompt.md) 与 [报告模板](templates/runtime-audit-report.md) | 一份绑定该 `run_hash` 的结果审计；**停在 Runtime Audit Gate**，等用户接受或指定返回路径。 |
+| 当前 Runtime Audit 已生成，但用户尚未接受该 `runtime_audit_id` 和 `run_hash` | **Runtime Audit Gate 等待** → 呈现发现、限制与返回建议，按用户裁决路由 | 不交付，也不把旧运行的接受沿用到新 `run_hash`。 |
+| 当前 Runtime Audit 已被用户接受，且结果仍对应被审 `run_hash` | **Runtime Finish** → [交付规则](references/runtime-finish.md) 与 [交付模板](templates/runtime-finish-report.md) | 只整理已审结果、复现信息与解释限制；交付后完成本功能单元。 |
+
+SDD 原流程在任务全部完成后会直接调用最终 Review，因此一轮 Building 可以产出 Building Audit 报告，**但必须停在该报告，不能顺延 Runtime**。如果会话恰在任务完成、报告生成前中断，恢复时按 Building Audit 行调用最终 Review，不重做任务。
+
+## 三个必须由用户作出的决定
+
+- **Spec Gate：**批准当前 Reader Spec 与 Build Plan；没有批准，不进入 Building。
+- **Building Audit Gate：**当前报告为 `PASS` 或用户明确接受限制的 `PASS_WITH_NOTES`；`audit_user_decision=accepted`、`accepted_audit_id=audit_id`，且用户在看到报告后的后续消息明确授权运行。代码提交、Spec 或 Plan 变化时重审。
+- **Runtime Audit Gate：**当前报告为 `PASS` 或用户明确接受限制的 `PASS_WITH_NOTES`；`audit_user_decision=accepted`、`accepted_runtime_audit_id=runtime_audit_id`、`accepted_run_hash=run_hash`。新运行或结果变更时重审。
+
+## 返工路由与总规则
+
+科学问题、源数据资格、概念算法或关键假设改变 → Proposal；代码偏离批准方案或需要工程改动 → Building，随后重新 Building Audit；运行环境、获准配置、缓存或可恢复失败且代码与方案仍适用 → Runtime。结果“不理想”先由 Runtime Audit 分类，不直接据此修改 Spec 或代码。Runtime Report 只是事实记录，不等于 Runtime Audit。
+
+只围绕一个功能单元工作。正式文档默认中文；`specs/`、`reports/`、`audits/` 只存 Markdown。一次性探查文件用毕删除；SDD 临时材料的最终清理时点尚待用户裁定，不得自动删除。`scripts/profile_data.py` 是可选的只读数据概况工具，不能代替源数据资格和科学判断。每次回复说明**当前阶段、所用依据、产物、门禁状态、下一步模块**，不把测试通过或进程退出码当作科学结果可信的证明。
