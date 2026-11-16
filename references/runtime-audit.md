@@ -4,7 +4,7 @@ Runtime Report 是执行者的事实记录。本阶段由**一名未负责该次
 
 ## 审查输入与范围
 
-读取当前已批准的 Reader Spec、Build Plan、已接受的 Building Audit、当前 Runtime Report、实际配置与日志、输入身份、正式结果和既往相关 Runtime Audit。用 [审查提示词](../templates/runtime-auditor-prompt.md) 和 [报告模板](../templates/runtime-audit-report.md)。Reviewer 只写审计报告，不修改源数据、代码、配置或结果，也不自行重跑正式生产任务。
+读取当前已批准的 Reader Spec、Build Plan、已接受的 Building Audit、`audits/runtime/report/` 中当前 Runtime Report、实际配置与日志、输入身份、正式结果和既往相关 Runtime Audit。用 [审查提示词](../templates/runtime-auditor-prompt.md) 和 [报告模板](../templates/runtime-audit-report.md)。Reviewer 只写审计报告，不修改源数据、代码、配置或结果，也不自行重跑正式生产任务。
 
 至少核对：运行的 `run_hash`、代码提交、Building `audit_id`、实际输入、配置与输出清单能否一一对应；运行是否完整，有无失败、重试、旧缓存或混合版本；输出 schema、单位/分母、数量、缺失、数值界限及适用的诊断是否符合批准方案；结果解释是否超出 Reader Spec 的结论边界。只对适用项作判断，并明确未验证范围。进程退出码或 pytest 通过不能代替结果审计；结果出乎预期也不能自动认定为错误。
 
