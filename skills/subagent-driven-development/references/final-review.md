@@ -15,7 +15,8 @@ the ledger's deferred-minor and parked lines so it can triage which must be
 fixed before user acceptance.
 For scientific analysis, also provide the approved Reader Spec and Build
 Plan, task review summary, source-data identity and qualification evidence,
-and final test and smoke-check records. Ask this one reviewer to trace
+the per-task human reports, and final test and smoke-check records. Ask this
+one reviewer to trace
 requirements through tasks, code, and evidence; check scientific and
 cross-task fidelity; and write the initial technical review to
 `<workspace>/final-review-initial.md`. This is SDD working evidence, not a
@@ -41,7 +42,16 @@ A substantive finding still open after re-review remains `BLOCKED` or
 ### Finish
 
 After a clean initial review, or after the one fix wave and scoped re-review,
-have an independent reviewer synthesize ONE formal report using the
+reconcile every human task report against the final reviewed `HEAD`. Update
+reports for tasks affected by the whole-branch fix wave, including changed
+AC evidence or residual limitations; retain the approved AC wording and
+identify any condition still awaiting Runtime. Check that every Build Plan
+task has a report and every AC has a status supported by the technical task
+report and independent review. Include the reports in the formal reviewer's
+evidence; an inconsistent or missing report is a documentation finding, not
+permission to claim the task complete.
+
+Then have an independent reviewer synthesize ONE formal report using the
 [Building Audit template](../../../templates/building-audit-report.md) under
 the functional unit's `audits/building/`. Include the initial review, any
 fix and re-review evidence, every ledger `Ruling:`, deferred finding, and

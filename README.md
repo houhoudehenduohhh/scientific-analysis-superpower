@@ -26,9 +26,9 @@ flowchart TD
 
 | 阶段 | 主要工作 | 主要产物与停止点 |
 |---|---|---|
-| **Proposal** | 用 brainstorming 明确研究目标、合格源数据、概念算法和结论边界；用 writing-plans 拆出可测试的实施任务。 | `specs/reader_spec.md` 与 `specs/build_plan.md`。停在 **Spec Gate**，等待用户批准当前版本。 |
-| **Building / SDD** | 在隔离的 Git 工作区按计划逐任务执行 TDD、实现、提交、独立 Task Review 和必要的修复复审。 | 代码、测试、提交及任务账本；完成后进行完整分支审查。 |
-| **Building Audit** | 一名独立 Reviewer 追溯 Spec、Plan、代码、测试及任务审查，形成正式报告。 | `audits/building/` 下的报告绑定当前提交；停在 **Building Audit Gate**，等待用户裁决及运行授权。 |
+| **Proposal** | 用 brainstorming 明确研究目标、合格源数据、概念算法和结论边界；用 writing-plans 拆出有目的、边界和编号验收条件的实施任务。 | `specs/reader_spec.md` 与 `specs/build_plan.md`。停在 **Spec Gate**，等待用户批准当前版本。 |
+| **Building / SDD** | 在隔离的 Git 工作区按计划逐任务执行 TDD、实现、提交、独立 Task Review 和必要的修复复审。 | 代码、测试、临时技术账本及每任务一份人工验收报告；完成后进行完整分支审查。 |
+| **Building Audit** | 一名独立 Reviewer 追溯 Spec、Plan、代码、测试及任务审查，形成正式报告。 | `audits/building/` 下的报告绑定当前提交，汇总并链接各任务人工报告；停在 **Building Audit Gate**。 |
 | **Runtime** | 只对获准的代码、输入和配置执行正式运行，记录实际经过与产物身份。 | `results/`、日志及事实性的 Runtime Report，使用 `run_hash` 绑定版本。报告本身不是审计结论。 |
 | **Runtime Audit** | 独立核对输入、代码、配置、运行和结果是否对应，检查完整性、科学口径及解释边界。 | `audits/runtime/` 下的报告绑定当前 `run_hash`；停在 **Runtime Audit Gate**。 |
 | **Runtime Finish** | 整理已获接受的结果、复现信息、解释边界和限制。 | `reports/` 下的最终交付说明；不新增计算。 |
@@ -40,8 +40,8 @@ Build Plan 决定任务边界。Building 不重新制定科学方案，而是按
 1. 建立或核对隔离工作树，为本份计划创建 `.tmp/sdd/` 临时账本，并检查任务之间的依赖与接口冲突。
 2. 从 Build Plan 提取 **Task N brief**，派独立实现 Agent。按 TDD 先用有独立依据的预期写失败测试，再做最小实现、重构、自查和 Git 提交。
 3. 用任务开始时的 `BASE` 到当前 `HEAD` 生成完整 diff 包。独立 Task Reviewer 分别判断任务契约符合性与代码质量。
-4. 有问题时由实现者修复并提交；Re-review 核对原发现和修复差异。最多五轮，仍有实质问题则停下交用户裁决。
-5. 所有任务完成后，先对**整个分支**做独立初审；可修复的实现缺陷最多集中修复一次并局部复审。初审留在 SDD 临时工作区，循环结束后才生成正式 Building Audit 报告；用户接受报告前不进入正式运行。
+4. 有问题时由实现者修复并提交；Re-review 核对原发现和修复差异。最多五轮，仍有实质问题则停下交用户裁决。任务审查通过后，按批准的 AC 生成一份人工验收报告。
+5. 所有任务完成后，先对**整个分支**做独立初审；可修复的实现缺陷最多集中修复一次并局部复审。更新受修复影响的人工报告后，生成带任务验收索引的正式 Building Audit；用户接受报告前不进入正式运行。
 
 `pytest` 验证具体行为，语法／导入检查验证代码可加载，小规模真实样本 smoke test 验证入口和实际数据接口；它们都不能单独证明正式科研结果可信。任务审查关注局部实现，Building Audit 关注跨任务与科学方案的一致性，Runtime Audit 则关注**实际运行结果**。
 
@@ -78,7 +78,7 @@ Build Plan 决定任务边界。Building 不重新制定科学方案，而是按
 │  └─ logs/              # 运行日志与运行状态
 ├─ results/               # data/、plot/、smoke_test/
 ├─ audits/                # building/、runtime/ 的 Markdown 审计报告
-├─ reports/               # Runtime Report 与交付说明（Markdown）
+├─ reports/               # building/ 人工任务报告、Runtime Report 与交付说明（Markdown）
 └─ .tmp/sdd/              # 每份 Build Plan 的临时账本、brief、review 与 diff 包
 ```
 
@@ -86,7 +86,7 @@ Build Plan 决定任务边界。Building 不重新制定科学方案，而是按
 
 - [SKILL.md](SKILL.md)：阶段路由、门禁及总规则。
 - [Proposal 规则](references/spec-stage.md)、[Reader Spec 模板](templates/reader-spec.md)、[Build Plan 模板](templates/build-plan.md)：科学方案和可执行任务计划。
-- [Building 边界](references/build-stage.md)、[SDD 模块](skills/subagent-driven-development/SKILL.md)、[TDD 模块](skills/test-driven-development/SKILL.md)：逐任务开发与审查。
+- [Building 边界](references/build-stage.md)、[SDD 模块](skills/subagent-driven-development/SKILL.md)、[TDD 模块](skills/test-driven-development/SKILL.md)、[人工任务报告模板](templates/task-human-report.md)：逐任务开发、审查与人工验收证据。
 - [Building Audit 模板](templates/building-audit-report.md)：完整分支审计及用户逐项裁决。
 - [Runtime 规则](references/runtime-stage.md)、[Runtime Audit 规则](references/runtime-audit.md)、[Runtime Finish 规则](references/runtime-finish.md)：正式运行、独立结果审计与交付。
 - `docs/`：设计讨论和人工阅读材料，不是 Agent 的执行入口。

@@ -314,6 +314,15 @@ message as your other bookkeeping:
 
 - `Task <N>: complete (commits <base7>..<head7>, review clean)`
 
+For scientific analysis, after the independent task review/re-review, use
+[the human task report template](../../templates/task-human-report.md) to
+write one Chinese Markdown report per task under the functional unit's
+`reports/building/`. Keep the implementer's technical `task-N-report.md` and
+review records in the SDD workspace. The human report must trace every
+approved AC to evidence or an explicit unverified status and map each repair
+to its affected AC; it does not create a per-task human approval gate. Link
+it in the ledger so the final reviewer can find it.
+
 Then mark the todo complete and move on. For scientific analysis, a real
 Critical/Important issue still open at the five-round cap pauses the
 dependent task sequence for user decision; it is not marked complete by
