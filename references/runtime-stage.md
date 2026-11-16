@@ -35,6 +35,6 @@ assert actual_inputs_and_write_paths_match_approved_contract
 
 ## 阶段产物与停止
 
-按 [Runtime Report 模板](../templates/runtime-report.md)在 `reports/` 下生成与 `run_hash` 对应的 Markdown 报告，例如 `reports/runtime_<run_hash前12位>.md`；多次运行保留各自的报告，不以新报告覆盖仍需追溯的旧运行。报告包含成功、失败或部分完成的事实、全部尝试和结果清单，不写“已通过 Runtime Audit”。一次性探查脚本、预览表和临时 JSON/CSV 用毕删除；被审计引用的异常证据先转入正式报告或结果记录。
+按 [Runtime Report 模板](../templates/runtime-report.md)在 `audits/runtime/report/` 下生成与 `run_hash` 对应的事实记录，例如 `audits/runtime/report/runtime_<run_hash前12位>.md`；多次运行保留各自的记录，不以新记录覆盖仍需追溯的旧运行。它是供后续独立审计的执行证据，不是 Runtime Audit；包含成功、失败或部分完成的事实、全部尝试和结果清单，不写“已通过 Runtime Audit”。一次性探查脚本、预览表和临时 JSON/CSV 用毕删除；被审计引用的异常证据先转入该记录或结果记录。`reports/` 仅在 Runtime Finish 生成面向结果验收的交付说明。
 
 Runtime 完成后停止。成功且完整的运行交给后续独立 Runtime Audit；失败或部分完成的运行先记录事实并按原因返回 Runtime、Building 或 Proposal。不得在同一轮自行完成审计、修复、重跑及最终交付。

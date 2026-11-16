@@ -29,7 +29,7 @@ flowchart TD
 | **Proposal** | 用 brainstorming 明确研究目标、合格源数据、概念算法和结论边界；用 writing-plans 拆出有目的、边界和编号验收条件的实施任务。 | `specs/reader_spec.md` 与 `specs/build_plan.md`。停在 **Spec Gate**，等待用户批准当前版本。 |
 | **Building / SDD** | 在隔离的 Git 工作区按计划逐任务执行 TDD、实现、提交、独立 Task Review 和必要的修复复审。 | 代码、测试、临时技术账本及每任务一份人工验收报告；完成后进行完整分支审查。 |
 | **Building Audit** | 一名独立 Reviewer 追溯 Spec、Plan、代码、测试及任务审查，形成正式报告。 | `audits/building/` 下的报告绑定当前提交，汇总并链接各任务人工报告；停在 **Building Audit Gate**。 |
-| **Runtime** | 只对获准的代码、输入和配置执行正式运行，记录实际经过与产物身份。 | `results/`、日志及事实性的 Runtime Report，使用 `run_hash` 绑定版本。报告本身不是审计结论。 |
+| **Runtime** | 只对获准的代码、输入和配置执行正式运行，记录实际经过与产物身份。 | `results/`、日志及 `audits/runtime/report/` 中的事实记录，使用 `run_hash` 绑定版本。它不是独立审计结论。 |
 | **Runtime Audit** | 独立核对输入、代码、配置、运行和结果是否对应，检查完整性、科学口径及解释边界。 | `audits/runtime/` 下的报告绑定当前 `run_hash`；停在 **Runtime Audit Gate**。 |
 | **Runtime Finish** | 整理已获接受的结果、复现信息、解释边界和限制。 | `reports/` 下的最终交付说明；不新增计算。 |
 
@@ -77,8 +77,8 @@ Build Plan 决定任务边界。Building 不重新制定科学方案，而是按
 │  ├─ smoke_test/        # 小样本冒烟测试
 │  └─ logs/              # 运行日志与运行状态
 ├─ results/               # data/、plot/、smoke_test/
-├─ audits/                # building/report/ 人工任务报告及 building/、runtime/ 审计报告
-├─ reports/               # Runtime 事实报告与最终交付说明（Markdown）
+├─ audits/                # building/report/ 人工任务报告、runtime/report/ 运行事实记录及两阶段审计报告
+├─ reports/               # Runtime Finish 后的结果交付说明（Markdown）
 └─ .tmp/sdd/              # 每份 Build Plan 的临时账本、brief、review 与 diff 包
 ```
 

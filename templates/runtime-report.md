@@ -1,6 +1,6 @@
 # Runtime Report（运行事实记录）
 
-> 本报告由执行者填写，只记录实际运行及初步异常；不构成 Runtime Audit 或交付许可。
+> 保存于 `audits/runtime/report/runtime_<run_hash前12位>.md`。本记录由执行者填写，只记录实际运行及初步异常；不构成 Runtime Audit 或交付许可。
 
 ## 运行身份
 
