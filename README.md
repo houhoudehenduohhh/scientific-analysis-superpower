@@ -97,4 +97,4 @@ Build Plan 决定任务边界。Building 不重新制定科学方案，而是按
 
 ## 来源与许可
 
-SDD、TDD、brainstorming、writing-plans 等模块基于 [obra/superpowers](https://github.com/obra/superpowers) 改造；本项目增加了科研 Spec、源数据资格、Building/Runtime 门禁和结果审计。仓库采用 MIT 许可，原版许可见 [LICENSE-superpowers](LICENSE-superpowers)。
+SDD、TDD、brainstorming、writing-plans 等模块基于 [obra/superpowers](https://github.com/obra/superpowers) 改造；本项目增加了科研 Spec、源数据资格、Building/Runtime 门禁和结果审计。仓库目前有两份许可文件：根目录的 [LICENSE](LICENSE) 是署名 `houhoudehenduohhh` 的 MIT 文本；[LICENSE-superpowers](LICENSE-superpowers) 保留原项目作者 Jesse Vincent 的 MIT 文本。这是对现有文件的描述，原创部分是否继续采用 MIT 应由权利人决定。
