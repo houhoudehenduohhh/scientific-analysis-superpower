@@ -41,7 +41,7 @@ Build Plan 决定任务边界。Building 不重新制定科学方案，而是按
 2. 从 Build Plan 提取 **Task N brief**，派独立实现 Agent。按 TDD 先用有独立依据的预期写失败测试，再做最小实现、重构、自查和 Git 提交。
 3. 用任务开始时的 `BASE` 到当前 `HEAD` 生成完整 diff 包。独立 Task Reviewer 分别判断任务契约符合性与代码质量。
 4. 有问题时由实现者修复并提交；Re-review 核对原发现和修复差异。最多五轮，仍有实质问题则停下交用户裁决。
-5. 所有任务完成后，对**整个分支**做一次独立审查，生成 Building Audit 报告；用户接受报告前不进入正式运行。
+5. 所有任务完成后，先对**整个分支**做独立初审；可修复的实现缺陷最多集中修复一次并局部复审。初审留在 SDD 临时工作区，循环结束后才生成正式 Building Audit 报告；用户接受报告前不进入正式运行。
 
 `pytest` 验证具体行为，语法／导入检查验证代码可加载，小规模真实样本 smoke test 验证入口和实际数据接口；它们都不能单独证明正式科研结果可信。任务审查关注局部实现，Building Audit 关注跨任务与科学方案的一致性，Runtime Audit 则关注**实际运行结果**。
 
@@ -57,7 +57,7 @@ Build Plan 决定任务边界。Building 不重新制定科学方案，而是按
 
 ## 如何使用
 
-将本仓库作为 `scientific-analysis-superpower` Skill 放入所用 Agent 环境的 Skills 目录，例如项目的 `.agents/skills/scientific-analysis-superpower/`。直接调用 **`$scientific-analysis-superpower`**，提供一个功能单元的路径、目标和已知数据来源；不需要另设 workflow。Agent 应先定位当前阶段，读取该阶段所需材料，而不是一次加载所有文件。
+将本仓库作为 `scientific-analysis-superpower` Skill 使用。若同一台电脑有多个项目，可在每个项目的 `.agents/skills/scientific-analysis-superpower/SKILL.md` 放一个薄入口，指向同一份本地 Git 仓库的根 `SKILL.md`，并要求按该仓库目录解析相对链接；更新时只需在中央仓库拉取一次。薄入口仅保留一个可发现的 Skill，内部模块由调度器按需读取。直接调用 **`$scientific-analysis-superpower`**，提供一个功能单元的路径、目标和已知数据来源；不需要另设 workflow。Agent 应先定位当前阶段，读取该阶段所需材料，而不是一次加载所有文件。
 
 首次调用示例：
 
@@ -93,7 +93,7 @@ Build Plan 决定任务边界。Building 不重新制定科学方案，而是按
 
 ## 当前验证状态
 
-流程和模板已建立；任务级审查需要多少人工介入、SDD 临时材料何时清理，以及 Building 到 Runtime 的实际衔接，仍需用真实功能单元验证和裁定。
+流程和模板已建立；任务级审查已确定由 Agent 在五轮上限内闭环。SDD 临时材料何时清理、Building 到 Runtime 的实际衔接仍待实测与裁定。
 
 ## 来源与许可
 

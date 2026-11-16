@@ -21,14 +21,14 @@ description: Route one scientific-analysis functional unit through Proposal, Bui
 | 首次规划、两份 Spec 缺失或需实质修订科学方案/数据资格 | **Proposal** → [阶段规则](references/spec-stage.md) → [brainstorming](skills/brainstorming/SKILL.md)（含按需 builder check）→ [writing-plans](skills/writing-plans/SKILL.md)；使用 [Reader Spec](templates/reader-spec.md)、[Build Plan](templates/build-plan.md) 模板 | `specs/reader_spec.md` 与 `specs/build_plan.md`；**停在 Spec Gate**，等用户批准当前两份文件。 |
 | 两份 Spec 已产出，但当前版本尚无用户批准 | **Spec Gate 等待** → 只呈现当前两份文件、未决事项与所需裁决；若用户提出修改则返回 Proposal | 不重新生成或执行 Build；建议用户审阅、批准或提出修订。 |
 | 当前两份 Spec 已获批准；计划任务未完成，或审计要求修改代码 | **Building** → [科研边界](references/build-stage.md) → [subagent-driven-development](skills/subagent-driven-development/SKILL.md)；其中按任务调用 TDD、实现 Agent、独立 Task Reviewer 与修复复审 | 代码、测试、提交及任务审查证据。SDD 任务全完后按其流程衔接整体 Review；遇方案/计划实质变更或五轮后仍有实质缺陷则停下交用户裁决。 |
-| 任务均完成，但当前提交尚无 Building Audit；或代码修复后旧报告已失效 | **Building Audit** → [SDD 最终 Review](skills/subagent-driven-development/references/final-review.md) → [requesting-code-review](skills/requesting-code-review/SKILL.md) 的独立 Reviewer；使用 [Building Audit 模板](templates/building-audit-report.md) | 一份绑定当前 Spec、Plan 和代码提交的正式报告；**停在 Building Audit Gate**，等用户审阅、接受并在看到报告后授权运行。已完成的任务不重新派发。 |
+| 任务均完成，但当前提交尚无 Building Audit；或代码修复后旧报告已失效 | **Building Audit** → [SDD 最终 Review](skills/subagent-driven-development/references/final-review.md) → [requesting-code-review](skills/requesting-code-review/SKILL.md) 的独立 Reviewer；使用 [Building Audit 模板](templates/building-audit-report.md) | 先在 SDD 临时工作区完成整体审查及最多一次实现缺陷修复与复审，再产出一份绑定当前 Spec、Plan 和代码提交的正式报告；**停在 Building Audit Gate**，等用户审阅、接受并在看到报告后授权运行。已完成的任务不重新派发。 |
 | 当前 Building Audit 已生成，但用户尚未接受或尚未在看过报告后授权运行 | **Building Audit Gate 等待** → 呈现问题、限制与 `audit_id`；按用户裁决返回 Proposal/Building 或进入 Runtime | 不修复后自行放行，不重用其他版本的审计。 |
 | 当前 Building Audit 已接受且用户已授权运行；尚无该版本的完整运行结果，或运行条件问题需要重跑 | **Runtime** → [运行规则](references/runtime-stage.md) 与 [Runtime Report 模板](templates/runtime-report.md) | 正式结果和绑定输入、代码、配置、输出的 `run_hash`；生成事实性 Runtime Report 后停止。失败或部分完成时按原因留在 Runtime 或返回上游。 |
 | 当前完整 Runtime Report 已形成，且该 `run_hash` 尚无有效 Runtime Audit | **Runtime Audit** → [审查规则](references/runtime-audit.md) → [独立 Reviewer 提示词](templates/runtime-auditor-prompt.md) 与 [报告模板](templates/runtime-audit-report.md) | 一份绑定该 `run_hash` 的结果审计；**停在 Runtime Audit Gate**，等用户接受或指定返回路径。 |
 | 当前 Runtime Audit 已生成，但用户尚未接受该 `runtime_audit_id` 和 `run_hash` | **Runtime Audit Gate 等待** → 呈现发现、限制与返回建议，按用户裁决路由 | 不交付，也不把旧运行的接受沿用到新 `run_hash`。 |
 | 当前 Runtime Audit 已被用户接受，且结果仍对应被审 `run_hash` | **Runtime Finish** → [交付规则](references/runtime-finish.md) 与 [交付模板](templates/runtime-finish-report.md) | 只整理已审结果、复现信息与解释限制；交付后完成本功能单元。 |
 
-SDD 原流程在任务全部完成后会直接调用最终 Review，因此一轮 Building 可以产出 Building Audit 报告，**但必须停在该报告，不能顺延 Runtime**。如果会话恰在任务完成、报告生成前中断，恢复时按 Building Audit 行调用最终 Review，不重做任务。
+SDD 在任务全部完成后执行整体 Review。初审及最多一次自动修复、复审属于 Building Audit 形成前的内部证据，不设正式 `audit_id`；只有最终报告写入 `audits/building/` 后才触发用户门禁，**必须停在该报告，不能顺延 Runtime**。已有正式报告且用户裁决仍为 `pending` 时，不得借用自动修复规则继续返工。会话中断时依据 SDD 账本恢复未完成的审查，不重做已完成任务。
 
 ## 三个必须由用户作出的决定
 
