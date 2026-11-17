@@ -3,9 +3,12 @@
 ## 审查对象与追溯
 
 - 功能单元、审查日期、独立 Reviewer：
+- `audit_scope: milestone | final_chain`；节点 ID、步骤集合及授权范围，或全链条节点集合：
 - Reader Spec、Build Plan 路径及指纹：
 - 已接受的 Building `audit_id` 与代码提交：
 - Runtime Report 路径、`run_id`、`run_hash`：
+- 上游已接受节点的审计 ID／哈希；最终审计的 `chain_hash` 及其计算清单：
+- 自动步骤审查及五轮内返工记录；正式审计前的初审、集中修复与复审：
 - 实际输入、配置、环境、日志与结果清单：
 - `runtime_audit_id`、`parent_runtime_audit_id`（首次写“无”）：
 
@@ -16,6 +19,8 @@
 ## Issues · 发现的问题
 
 每条记录 `finding_id`、严重程度、规格或结果契约、输入/日志/结果证据、影响及建议返回阶段。没有问题写“无”；不把结果不符合预期直接写成缺陷。
+
+每项需要返工的发现补充判定卡：批准依据、已证实证据、根因或待判定、拟修改对象、受影响产物及依赖节点、建议返回 `Runtime | Building | Proposal | 待判定`。实际改动若越过所选阶段边界，必须重新路由；不能以审计建议代替用户对正式报告的裁决。
 
 ### Critical · 阻断
 
@@ -46,9 +51,17 @@
 - `return_stage: Proposal | Building | Runtime | none`
 - 判断依据与不能据此推断的内容：
 
+## 节点任务验收与最终链条索引
+
+节点审计列本节点全部运行步骤及其所属 Build Task/AC，包含自动审查、修复轮次、最终状态与事实记录链接；最终审计列所有已接受节点、审计 ID、`run_hash`、结果及跨节点一致性。未运行的步骤必须显式标记，不能以部分完成宣称整个计划完成。
+
+| 节点／步骤 | Task 与 AC／结果 | 事实记录和独立审查 | 修复轮次及遗留 | 当前状态／审计身份 |
+|---|---|---|---|---|
+|  |  |  |  |  |
+
 ## Human Disposition · 用户核实与已确定方向
 
-初审时逐项记“待定”。用户在对话中明确裁决后，由协调 Agent 按 `finding_id` 记录决定及依据，保留原始 Reviewer 发现；不清楚的决定仍记“待定”。旧报告只代表旧 `run_hash`。
+初审时逐项记“待定”。用户在对话中明确裁决后，由协调 Agent 按 `finding_id` 记录决定及依据，保留原始 Reviewer 发现；不清楚的决定仍记“待定”。旧报告只代表其绑定的节点 `run_hash` 或最终 `chain_hash`。
 
 | finding_id | 核实依据 | 接受／调整／不采纳／待定 | 已确定处理方向与验收证据 | 裁决人及日期 |
 |---|---|---|---|---|
@@ -70,5 +83,6 @@
 - `audit_user_decision: pending`
 - `accepted_runtime_audit_id: null`
 - `accepted_run_hash: null`
+- `accepted_chain_hash: null`（仅最终全链条审计使用；节点审计保持 null）
 
-报告生成后停止。只有用户在看到本报告后明确接受当前 `runtime_audit_id` 与 `run_hash`，且结论为 `PASS` 或获用户接受限制的 `PASS_WITH_NOTES`，才能进入 Runtime Finish。
+报告生成后停止。节点报告获用户接受当前 `runtime_audit_id` 与 `run_hash` 后，仅解锁获授权的依赖节点；最终全链条报告获用户接受当前 `runtime_audit_id` 与 `chain_hash` 后才可进入 Runtime Finish。两者均须 `PASS` 或获用户接受限制的 `PASS_WITH_NOTES`。

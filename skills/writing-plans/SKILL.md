@@ -47,6 +47,10 @@ acceptance criteria before implementation approval. Each criterion names an
 observable result or failure behavior and whether Building evidence or a
 later authorized Runtime is needed to verify it. The task brief inherits
 these criteria; tests demonstrate them but do not redefine success.
+Also map Build Tasks to a separate acyclic Runtime-step graph and user-reviewable
+milestones. Group steps by meaningful interim deliverables, not by code-task
+count; keep each milestone's prerequisites, outputs and acceptance criteria
+explicit. A Build Task may supply more than one Runtime step.
 
 ## Step Granularity
 

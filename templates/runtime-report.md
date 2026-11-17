@@ -1,12 +1,15 @@
 # Runtime Report（运行事实记录）
 
-> 保存于 `audits/runtime/report/runtime_<run_hash前12位>.md`。本记录由执行者填写，只记录实际运行及初步异常；不构成 Runtime Audit 或交付许可。
+> 保存于 `audits/runtime/report/`，文件名包含节点、步骤或节点汇总及本次哈希。本记录由执行者填写，只记录实际运行及初步异常；不构成 Runtime Audit 或交付许可。失败尝试保留独立记录，不用后续成功覆盖。
 
 ## 运行身份
 
 - 功能单元：
+- 验收节点、步骤（节点汇总时列全部步骤）、本次授权范围：
+- 本步尝试轮次及前次尝试哈希（首次写“无”）：
 - `run_id`：
-- `run_hash`（SHA-256，及计算/序列化方法）：
+- `step_run_hash` 或节点 `run_hash`（SHA-256，及计算/序列化方法）：
+- 上游已接受节点的 `runtime_audit_id`、`run_hash`；无则写“无”：
 - 对应 Building `audit_id` 与接受记录：
 - Reader Spec、Build Plan 路径及指纹：
 - 代码提交、仓库/工作树：
@@ -45,3 +48,4 @@
 - 需要 Runtime Audit 核实的问题：
 - 与本轮有关的正式配置、日志、结果路径：
 - 已清理的临时文件与保留的异常证据：
+- 当前节点内已通过、失败、未运行的步骤及对应审查记录：
