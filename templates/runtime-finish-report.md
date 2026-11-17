@@ -7,6 +7,7 @@
 - 已接受的 Building `audit_id`、代码提交：
 - Runtime Report、`run_id`、`run_hash`：
 - 已接受的 `runtime_audit_id`、用户裁决及限制：
+- 全部阶段性验收节点的审计 ID／`run_hash`、最终 `chain_hash`：
 - 实际源数据身份、配置、运行命令与日志：
 
 ## 结果概览

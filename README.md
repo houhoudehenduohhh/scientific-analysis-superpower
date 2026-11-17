@@ -15,22 +15,28 @@ flowchart TD
     BA --> BAG{Building Audit Gate<br/>用户接受当前审计并授权运行?}
     BAG -- 科学方案或数据资格变化 --> P
     BAG -- 代码返工 --> B
-    BAG -- 接受并授权 --> R[Runtime<br/>正式运行与事实性报告]
-    R --> RA[Runtime Audit<br/>独立审查运行及结果]
-    RA --> RAG{Runtime Audit Gate<br/>用户接受当前 run_hash 的审计?}
+    BAG -- 接受并授权 --> R[Runtime 步骤<br/>运行、自动独立审查、至多五轮修复复审]
+    R --> RA[节点 Runtime Audit<br/>整体初审及至多一次集中修复复审]
+    RA --> RAG{节点门禁<br/>用户接受该节点 run_hash?}
     RAG -- 运行条件问题 --> R
     RAG -- 代码问题 --> B
     RAG -- 科学方案问题 --> P
-    RAG -- 接受 --> F[Runtime Finish<br/>交付已审结果]
+    RAG -- 接受且后续已授权 --> R
+    RAG -- 全部节点接受 --> FA[最终全链条结果审计]
+    FA --> FAG{最终门禁<br/>用户接受 chain_hash?}
+    FAG -- 运行条件或结果缺陷 --> R
+    FAG -- 代码问题 --> B
+    FAG -- 科学方案问题 --> P
+    FAG -- 接受 --> F[Runtime Finish<br/>交付已审结果]
 ```
 
 | 阶段 | 主要工作 | 主要产物与停止点 |
 |---|---|---|
-| **Proposal** | 用 brainstorming 明确研究目标、合格源数据、概念算法和结论边界；用 writing-plans 拆出有目的、边界和编号验收条件的实施任务。 | `specs/reader_spec.md` 与 `specs/build_plan.md`。停在 **Spec Gate**，等待用户批准当前版本。 |
+| **Proposal** | 用 brainstorming 明确研究目标、合格源数据、概念算法和结论边界；用 writing-plans 拆出实施任务，并规划无环的 Runtime 步骤图及阶段性验收节点。 | `specs/reader_spec.md` 与 `specs/build_plan.md`。停在 **Spec Gate**，等待用户批准当前版本。 |
 | **Building / SDD** | 在隔离的 Git 工作区按计划逐任务执行 TDD、实现、提交、独立 Task Review 和必要的修复复审。 | 代码、测试、临时技术账本及每任务一份人工验收报告；完成后进行完整分支审查。 |
 | **Building Audit** | 一名独立 Reviewer 追溯 Spec、Plan、代码、测试及任务审查，形成正式报告。 | `audits/building/` 下的报告绑定当前提交，汇总并链接各任务人工报告；停在 **Building Audit Gate**。 |
-| **Runtime** | 只对获准的代码、输入和配置执行正式运行，记录实际经过与产物身份。 | `results/`、日志及 `audits/runtime/report/` 中的事实记录，使用 `run_hash` 绑定版本。它不是独立审计结论。 |
-| **Runtime Audit** | 独立核对输入、代码、配置、运行和结果是否对应，检查完整性、科学口径及解释边界。 | `audits/runtime/` 下的报告绑定当前 `run_hash`；停在 **Runtime Audit Gate**。 |
+| **Runtime** | 按获准的步骤图执行；每步自动独立审查，运行条件问题最多五轮修复复审。 | `results/`、日志及 `audits/runtime/report/` 中的逐步事实记录；通过的步骤才解锁下游。 |
+| **Runtime Audit** | 每个验收节点独立整体审查并等用户接受；全部节点接受后另作最终全链条审计。 | `audits/runtime/` 的节点报告绑定各自 `run_hash`，最终报告绑定 `chain_hash`；两类正式报告均停在用户门禁。 |
 | **Runtime Finish** | 整理已获接受的结果、复现信息、解释边界和限制。 | `reports/` 下的最终交付说明；不新增计算。 |
 
 ## SDD 怎样开发一个任务
@@ -54,6 +60,8 @@ Build Plan 决定任务边界。Building 不重新制定科学方案，而是按
 | 环境、获准配置、缓存或可恢复运行故障，且方案与代码仍适用 | **Runtime**：修正运行条件后重跑，生成新的 `run_hash` 并重新审计。 |
 
 结果不符合预期时，先记录事实并由 Runtime Audit 判断原因。审计报告中的“已确定”“待讨论”“本轮暂缓”与实施状态分开记录；用户决定不等于修复完成，旧审计也不能自动放行新提交或新运行。
+
+Build Plan 的开发任务与 Runtime 步骤分别编号；步骤图及节点图均不得有环。运行节点可以汇集多个 Task 的成果，Task 也可以实现多个运行步骤。自动步骤审查不设置人工门禁；正式节点审计和最终全链条审计都须由用户接受。接受上游节点不自动扩大后续授权。返工按拟修改对象和实际改动核对路由，受影响的结果及下游审计失效，未受影响上游经身份核验后可复用。
 
 ## 如何使用
 
@@ -88,12 +96,12 @@ Build Plan 决定任务边界。Building 不重新制定科学方案，而是按
 - [Proposal 规则](references/spec-stage.md)、[Reader Spec 模板](templates/reader-spec.md)、[Build Plan 模板](templates/build-plan.md)：科学方案和可执行任务计划。
 - [Building 边界](references/build-stage.md)、[SDD 模块](skills/subagent-driven-development/SKILL.md)、[TDD 模块](skills/test-driven-development/SKILL.md)、[人工任务报告模板](templates/task-human-report.md)：逐任务开发、审查与人工验收证据。
 - [Building Audit 模板](templates/building-audit-report.md)：完整分支审计及用户逐项裁决。
-- [Runtime 规则](references/runtime-stage.md)、[Runtime Audit 规则](references/runtime-audit.md)、[Runtime Finish 规则](references/runtime-finish.md)：正式运行、独立结果审计与交付。
+- [Runtime 规则](references/runtime-stage.md)、[自动步骤审查提示词](templates/runtime-task-reviewer-prompt.md)、[Runtime Audit 规则](references/runtime-audit.md)、[Runtime Finish 规则](references/runtime-finish.md)：分批运行、逐步审查、节点与最终审计及交付。
 - `docs/`：设计讨论和人工阅读材料，不是 Agent 的执行入口。
 
 ## 当前验证状态
 
-流程和模板已建立；任务级审查已确定由 Agent 在五轮上限内闭环。SDD 临时材料何时清理、Building 到 Runtime 的实际衔接仍待实测与裁定。
+流程和模板已建立；Building 与 Runtime 的步骤级审查在各自五轮上限内闭环，正式审计仍由用户裁决。SDD 临时材料何时清理，以及分批 Runtime 的实际端到端衔接仍需在真实功能单元中验证。
 
 ## 来源与许可
 
