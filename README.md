@@ -32,7 +32,7 @@ flowchart TD
 
 | 阶段 | 主要工作 | 主要产物与停止点 |
 |---|---|---|
-| **Proposal** | 用 brainstorming 明确研究目标、合格源数据、概念算法和结论边界；用 writing-plans 拆出实施任务，并规划无环的 Runtime 步骤图及阶段性验收节点。 | `specs/reader_spec.md` 与 `specs/build_plan.md`。停在 **Spec Gate**，等待用户批准当前版本。 |
+| **Proposal** | 用 brainstorming 明确研究目标、合格源数据、概念算法和结论边界；用 writing-plans 拆出实施任务，并规划无环的 Runtime 步骤图及阶段性验收节点。 | `specs/reader_spec.md` 与 `specs/build_plan.md`。连同本轮独立 Task MD 提交。停在 **Spec Gate**，等待用户批准当前版本。 |
 | **Building / SDD** | 在隔离的 Git 工作区按计划逐任务执行 TDD、实现、提交、独立 Task Review 和必要的修复复审。 | 代码、测试、临时技术账本及每任务一份人工验收报告；完成后进行完整分支审查。 |
 | **Building Audit** | 一名独立 Reviewer 追溯 Spec、Plan、代码、测试及任务审查，形成正式报告。 | `audits/building/` 下的报告绑定当前提交，汇总并链接各任务人工报告；停在 **Building Audit Gate**。 |
 | **Runtime** | 按获准的步骤图执行；每步自动独立审查，运行条件问题最多五轮修复复审。 | `results/`、日志及 `audits/runtime/report/` 中的逐步事实记录；通过的步骤才解锁下游。 |
@@ -123,7 +123,7 @@ Build Plan 的开发任务与 Runtime 步骤分别编号；步骤图及节点图
 
 ## 当前验证状态
 
-流程和模板已建立；Building 与 Runtime 的步骤级审查在各自五轮上限内闭环，正式审计仍由用户裁决。SDD 临时材料何时清理，以及分批 Runtime 的实际端到端衔接仍需在真实功能单元中验证。
+流程和模板已建立；Building 与 Runtime 的步骤级审查在各自五轮上限内闭环，正式审计仍由用户裁决。SDD 临时材料留存供 Agent 复查。分批 Runtime 的完整执行仍需结合功能单元验证。
 
 ## 来源与许可
 

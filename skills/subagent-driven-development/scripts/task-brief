@@ -30,32 +30,46 @@ n=$2
 
 # Indexed plans use complete IDs. Legacy inline plans keep their original parser.
 task_file=
-if awk -F '|' '
-  /^ *(```|~~~)/ { fenced = !fenced; next }
-  !fenced && /^\|/ && $2 ~ /^[ \t]*任务 ID[ \t]*$/ && $3 ~ /^[ \t]*Task MD[ \t]*$/ { found = 1 }
-  END { exit !found }
-' "$plan"; then
-  [[ "$n" =~ ^T([0-9]+)(-EXT[0-9]+)?$ ]] || {
-    echo "task-brief: indexed plans require a complete TNN or TNN-EXTNN ID" >&2; exit 2;
-  }
-  parent=$(printf '%s' "${BASH_REMATCH[1]}")
+expected=
+if [[ "$n" =~ ^T([0-9]+)(-EXT[0-9]+)?$ ]]; then
+  parent="${BASH_REMATCH[1]}"
   extension=$(printf '%s' "${BASH_REMATCH[2]:-}" | tr '[:upper:]' '[:lower:]')
   expected="tasks/task-$parent/task-$parent$extension.md"
-  if ! awk -F '|' -v id="$n" -v link="[Task MD]($expected)" '
-    /^ *(```|~~~)/ { fenced = !fenced; next }
-    !fenced && /^\|/ {
-      gsub(/^[ \t]+|[ \t]+$/, "", $2)
-      gsub(/^[ \t]+|[ \t]+$/, "", $3)
-      if ($2 == id) { count++; if ($3 == link) valid++ }
-    }
-    END { exit !(count == 1 && valid == 1) }
-  ' "$plan"; then
-    echo "task-brief: expected one index row for $n linking $expected" >&2
-    exit 3
-  fi
-  task_file="$(dirname "$plan")/$expected"
-  [ -s "$task_file" ] || { echo "task-brief: missing or empty task file: $task_file" >&2; exit 3; }
 fi
+index_rc=0
+awk -F '|' -v id="$n" -v expected="$expected" '
+  /^ *(```|~~~)/ { fenced = !fenced; indexed = 0; next }
+  fenced { next }
+  /^## 任务清单[ \t\r]*$/ { section = 1; indexed = 0; next }
+  /^#{1,2}[ \t]/ { section = 0; indexed = 0 }
+  !/^ *\|/ { indexed = 0; next }
+  section {
+    gsub(/^[ \t]+|[ \t]+$/, "", $2)
+    gsub(/^[ \t]+|[ \t]+$/, "", $3)
+    if ($2 == "任务 ID" && $3 == "Task MD") {
+      tables++; indexed = 1; next
+    }
+    if (indexed && $2 == id) {
+      rows++
+      if ($3 == "[Task MD](" expected ")") valid++
+    }
+  }
+  END {
+    if (!tables) exit 10
+    if (tables != 1 || expected == "" || rows != 1 || valid != 1) exit 3
+  }
+' "$plan" || index_rc=$?
+case "$index_rc" in
+  0)
+    task_file="$(dirname "$plan")/$expected"
+    [ -s "$task_file" ] || { echo "task-brief: missing or empty task file: $task_file" >&2; exit 3; }
+    ;;
+  10) ;; # No index table: fall back to the legacy inline format.
+  *)
+    echo "task-brief: expected one task-index row for $n linking $expected" >&2
+    exit "$index_rc"
+    ;;
+esac
 
 if [ $# -eq 3 ]; then
   out=$3

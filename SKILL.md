@@ -10,7 +10,7 @@ description: Route one scientific-analysis functional unit through Proposal, Bui
 ## 每次启动先定位状态
 
 1. 确定本次**一个最小功能单元**及用户当前目标。若路径未确定且无法从上下文得出，只询问必要的路径或范围。
-2. 读取该单元当前 Reader Spec、Build Plan 的批准状态及 Runtime 步骤／验收节点图；Git 代码提交和 SDD 账本；最新 Building Audit 的版本与用户裁决；当前授权范围、各节点的运行记录、`run_hash`、审计版本与用户裁决；最终 `chain_hash` 和全链条审计状态。只读取判断当前阶段所需的文件，不把历史报告的批准沿用到新版本。
+2. 读取该单元当前 Reader Spec、Build Plan、拟执行 Task MD 的批准身份及 Runtime 步骤／验收节点图；Git 代码提交和 SDD 账本；最新 Building Audit 的版本与用户裁决；当前授权范围、各节点的运行记录、`run_hash`、审计版本与用户裁决；最终 `chain_hash` 和全链条审计状态。只读取判断当前阶段所需的文件，不把历史报告的批准沿用到新版本。
 3. 先检查最早未通过的门禁，再按下表选择**唯一当前阶段**。若记录冲突或缺失，停在该门禁补证据；用户说“继续”“运行”，或在一条消息里同时要求计划和执行，都不能代替门禁批准。
 4. 完成当前阶段后，报告本阶段产物、版本、门禁状态和**建议下一步调用的模块**。到达用户门禁时必须停止，不能在同一轮自行批准并越级。
 
@@ -18,10 +18,10 @@ description: Route one scientific-analysis functional unit through Proposal, Bui
 
 | 当前证据 | 当前阶段 → 调用模块 | 本阶段产物与停止点 |
 |---|---|---|
-| 首次规划、规格缺失、补充分析或需实质修订科学方案/数据资格 | **Proposal** → [阶段规则](references/spec-stage.md) → [brainstorming](skills/brainstorming/SKILL.md)（含按需 builder check）→ [writing-plans](skills/writing-plans/SKILL.md)；使用 [Reader Spec](templates/reader-spec.md)、[Build Plan](templates/build-plan.md) 模板 | `specs/reader_spec.md` 与 `specs/build_plan.md`；**停在 Spec Gate**，等用户批准总览及本轮 Task MD。 |
+| 首次规划、规格缺失、补充分析或需实质修订科学方案/数据资格 | **Proposal** → [阶段规则](references/spec-stage.md) → [brainstorming](skills/brainstorming/SKILL.md)（含按需 builder check）→ [writing-plans](skills/writing-plans/SKILL.md)；使用 [Reader Spec](templates/reader-spec.md)、[Build Plan](templates/build-plan.md) 模板 | `specs/reader_spec.md` 、`specs/build_plan.md` 及 `specs/tasks/` 下的本轮任务规格；**停在 Spec Gate**，等用户批准总览及本轮 Task MD。 |
 | 当前规格已产出，但本轮版本尚无用户批准 | **Spec Gate 等待** → 只呈现本轮规格、未决事项与所需裁决；若用户提出修改则返回 Proposal | 不重新生成或执行 Build；建议用户审阅、批准或提出修订。 |
 | 当前总览与拟执行任务已获批准；计划任务未完成，或审计要求修改代码 | **Building** → [科研边界](references/build-stage.md) → [subagent-driven-development](skills/subagent-driven-development/SKILL.md)；其中按任务调用 TDD、实现 Agent、独立 Task Reviewer 与修复复审 | 代码、测试、提交及任务审查证据。SDD 任务全完后按其流程衔接整体 Review；遇方案/计划实质变更或五轮后仍有实质缺陷则停下交用户裁决。 |
-| 任务均完成，但当前提交尚无 Building Audit；或代码修复后旧报告已失效 | **Building Audit** → [SDD 最终 Review](skills/subagent-driven-development/references/final-review.md) → [requesting-code-review](skills/requesting-code-review/SKILL.md) 的独立 Reviewer；使用 [Building Audit 模板](templates/building-audit-report.md) | 先在 SDD 临时工作区完成整体审查及最多一次实现缺陷修复与复审，再产出一份绑定当前 Spec、Plan 和代码提交的正式报告；**停在 Building Audit Gate**，等用户审阅、接受并在看到报告后授权运行。已完成的任务不重新派发。 |
+| 任务均完成，但当前提交尚无 Building Audit；或代码修复后旧报告已失效 | **Building Audit** → [SDD 最终 Review](skills/subagent-driven-development/references/final-review.md) → [requesting-code-review](skills/requesting-code-review/SKILL.md) 的独立 Reviewer；使用 [Building Audit 模板](templates/building-audit-report.md) | 先在 SDD 临时工作区完成整体审查及最多一次实现缺陷修复与复审，再产出一份绑定当前 Spec、Plan、受审 Task MD 和代码提交的正式报告；**停在 Building Audit Gate**，等用户审阅、接受并在看到报告后授权运行。已完成的任务不重新派发。 |
 | 当前 Building Audit 已生成，但用户尚未接受或尚未在看过报告后授权运行 | **Building Audit Gate 等待** → 呈现问题、限制与 `audit_id`；按用户裁决返回 Proposal/Building 或进入 Runtime | 不修复后自行放行，不重用其他版本的审计。 |
 | Building Audit 已接受，且本次节点／步骤已获授权；该节点步骤尚未全通过 | **Runtime 步骤循环** → [运行规则](references/runtime-stage.md)、[事实记录](templates/runtime-report.md) 与 [自动步骤审查](templates/runtime-task-reviewer-prompt.md) | 按批准的无环步骤图执行、独立审查及最多五轮运行条件修复；未通过的步骤不解锁下游。需改代码或科学方案时分别返回 Building／Proposal。 |
 | 当前节点步骤均通过，尚无该节点正式审计 | **节点 Runtime Audit** → [审查规则](references/runtime-audit.md)、[独立 Reviewer](templates/runtime-auditor-prompt.md) 与 [报告模板](templates/runtime-audit-report.md) | 整体初审、最多一次允许范围内集中修复及复审后形成绑定节点 `run_hash` 的正式报告；**停在节点用户门禁**。 |
@@ -35,8 +35,8 @@ SDD 在任务全部完成后执行整体 Review。初审及最多一次自动修
 
 ## 用户门禁
 
-- **Spec Gate：**批准当前 Reader Spec 与 Build Plan；没有批准，不进入 Building。
-- **Building Audit Gate：**当前报告为 `PASS` 或用户明确接受限制的 `PASS_WITH_NOTES`；`audit_user_decision=accepted`、`accepted_audit_id=audit_id`，且用户在看到报告后的后续消息明确授权运行。代码提交、Spec 或 Plan 变化时重审。
+- **Spec Gate：**批准当前 Reader Spec、Build Plan 和拟执行的 Task MD 版本；没有批准，不进入 Building。
+- **Building Audit Gate：**当前报告为 `PASS` 或用户明确接受限制的 `PASS_WITH_NOTES`；`audit_user_decision=accepted`、`accepted_audit_id=audit_id`，且用户在看到报告后的后续消息明确授权运行。代码提交、Spec、Plan 或受审 Task MD 变化时重审；受影响的旧授权失效。
 - **Runtime 节点门禁：**每个 Build Plan 验收节点的正式报告为 `PASS` 或用户明确接受限制的 `PASS_WITH_NOTES`；用户接受对应 `runtime_audit_id` 和节点 `run_hash` 后，才解锁获授权的依赖节点。自动步骤审查无需逐项人工批准。
 - **最终 Runtime Audit Gate：**全部节点获接受后另审全链条；当前报告为 `PASS` 或用户明确接受限制的 `PASS_WITH_NOTES`，用户接受其 `runtime_audit_id` 与 `chain_hash` 后才可 Runtime Finish。新运行或受影响结果变更时重审。
 
