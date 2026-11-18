@@ -104,6 +104,8 @@ owns the code, in that task's own step style.]
 
 ## Task Structure
 
+For scientific analysis, use the Build Plan task index and [standalone Task Spec](../../templates/task-spec.md). Write one file per complete task ID, including extensions in the parent task directory. The inline example below applies to legacy and other plans.
+
 ````markdown
 ### Task N: [Component Name]
 

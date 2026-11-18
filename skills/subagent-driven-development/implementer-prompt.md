@@ -14,7 +14,7 @@ Subagent (general-purpose):
 
     ## Task Description
 
-    Read your task brief first: [BRIEF_FILE]
+    Read your task brief first: [BRIEF_FILE] (approved task snapshot, including its full ID)
     It contains the full task text from the plan.
 
     ## Context

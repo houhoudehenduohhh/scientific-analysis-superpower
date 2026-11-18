@@ -25,3 +25,5 @@ plan is its argument — and record the ruling beside its row. In scientific
 analysis, a conflict requiring a material change to the approved Spec or
 Build Plan stops for user decision before Task 1. Otherwise dispatch Task 1.
 The review loop remains the net for conflicts that emerge from implementation.
+
+For indexed plans, verify unique complete task IDs, the Task MD links and approved file identities. Check parent tasks, input versions and dependencies affected by each extension. Record the affected downstream scope before dispatch.

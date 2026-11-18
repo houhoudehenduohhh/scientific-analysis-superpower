@@ -163,9 +163,9 @@ Record BASE (`git rev-parse HEAD`) before dispatching — the review package
 and fix-round diffs need it.
 
 - **Task brief:** before dispatching an implementer, run this skill's
-  `bash scripts/task-brief PLAN_FILE N` by its absolute path, from the
+  `bash scripts/task-brief PLAN_FILE TASK_ID` by its absolute path, from the
   working tree you're executing in — it extracts the task's full text to a
-  uniquely named file and prints the path. Compose the dispatch so the
+  uniquely named file and prints the path. For indexed plans, match the complete ID and verify the approved Task MD identity before extraction. Use the full ID in the ledger, artifacts and review dispatch. Compose the dispatch so the
   brief stays the single source of
   requirements. Your dispatch should contain: (1) one line on where this
   task fits in the project; (2) the brief path, introduced as "read this

@@ -18,9 +18,9 @@ description: Route one scientific-analysis functional unit through Proposal, Bui
 
 | 当前证据 | 当前阶段 → 调用模块 | 本阶段产物与停止点 |
 |---|---|---|
-| 首次规划、两份 Spec 缺失或需实质修订科学方案/数据资格 | **Proposal** → [阶段规则](references/spec-stage.md) → [brainstorming](skills/brainstorming/SKILL.md)（含按需 builder check）→ [writing-plans](skills/writing-plans/SKILL.md)；使用 [Reader Spec](templates/reader-spec.md)、[Build Plan](templates/build-plan.md) 模板 | `specs/reader_spec.md` 与 `specs/build_plan.md`；**停在 Spec Gate**，等用户批准当前两份文件。 |
-| 两份 Spec 已产出，但当前版本尚无用户批准 | **Spec Gate 等待** → 只呈现当前两份文件、未决事项与所需裁决；若用户提出修改则返回 Proposal | 不重新生成或执行 Build；建议用户审阅、批准或提出修订。 |
-| 当前两份 Spec 已获批准；计划任务未完成，或审计要求修改代码 | **Building** → [科研边界](references/build-stage.md) → [subagent-driven-development](skills/subagent-driven-development/SKILL.md)；其中按任务调用 TDD、实现 Agent、独立 Task Reviewer 与修复复审 | 代码、测试、提交及任务审查证据。SDD 任务全完后按其流程衔接整体 Review；遇方案/计划实质变更或五轮后仍有实质缺陷则停下交用户裁决。 |
+| 首次规划、规格缺失、补充分析或需实质修订科学方案/数据资格 | **Proposal** → [阶段规则](references/spec-stage.md) → [brainstorming](skills/brainstorming/SKILL.md)（含按需 builder check）→ [writing-plans](skills/writing-plans/SKILL.md)；使用 [Reader Spec](templates/reader-spec.md)、[Build Plan](templates/build-plan.md) 模板 | `specs/reader_spec.md` 与 `specs/build_plan.md`；**停在 Spec Gate**，等用户批准总览及本轮 Task MD。 |
+| 当前规格已产出，但本轮版本尚无用户批准 | **Spec Gate 等待** → 只呈现本轮规格、未决事项与所需裁决；若用户提出修改则返回 Proposal | 不重新生成或执行 Build；建议用户审阅、批准或提出修订。 |
+| 当前总览与拟执行任务已获批准；计划任务未完成，或审计要求修改代码 | **Building** → [科研边界](references/build-stage.md) → [subagent-driven-development](skills/subagent-driven-development/SKILL.md)；其中按任务调用 TDD、实现 Agent、独立 Task Reviewer 与修复复审 | 代码、测试、提交及任务审查证据。SDD 任务全完后按其流程衔接整体 Review；遇方案/计划实质变更或五轮后仍有实质缺陷则停下交用户裁决。 |
 | 任务均完成，但当前提交尚无 Building Audit；或代码修复后旧报告已失效 | **Building Audit** → [SDD 最终 Review](skills/subagent-driven-development/references/final-review.md) → [requesting-code-review](skills/requesting-code-review/SKILL.md) 的独立 Reviewer；使用 [Building Audit 模板](templates/building-audit-report.md) | 先在 SDD 临时工作区完成整体审查及最多一次实现缺陷修复与复审，再产出一份绑定当前 Spec、Plan 和代码提交的正式报告；**停在 Building Audit Gate**，等用户审阅、接受并在看到报告后授权运行。已完成的任务不重新派发。 |
 | 当前 Building Audit 已生成，但用户尚未接受或尚未在看过报告后授权运行 | **Building Audit Gate 等待** → 呈现问题、限制与 `audit_id`；按用户裁决返回 Proposal/Building 或进入 Runtime | 不修复后自行放行，不重用其他版本的审计。 |
 | Building Audit 已接受，且本次节点／步骤已获授权；该节点步骤尚未全通过 | **Runtime 步骤循环** → [运行规则](references/runtime-stage.md)、[事实记录](templates/runtime-report.md) 与 [自动步骤审查](templates/runtime-task-reviewer-prompt.md) | 按批准的无环步骤图执行、独立审查及最多五轮运行条件修复；未通过的步骤不解锁下游。需改代码或科学方案时分别返回 Building／Proposal。 |
@@ -44,4 +44,4 @@ SDD 在任务全部完成后执行整体 Review。初审及最多一次自动修
 
 科学问题、源数据资格、概念算法或关键假设改变 → Proposal；代码偏离批准方案或需要工程改动 → Building，随后重新 Building Audit；运行环境、获准配置、缓存或可恢复失败且代码与方案仍适用 → Runtime。结果“不理想”先由 Runtime Audit 分类，不直接据此修改 Spec 或代码。Runtime Report 只是事实记录，不等于 Runtime Audit。
 
-只围绕一个功能单元工作。正式文档默认中文；`specs/`、`reports/`、`audits/` 只存 Markdown。一次性探查文件用毕删除；SDD 临时材料的最终清理时点尚待用户裁定，不得自动删除。`scripts/profile_data.py` 是可选的只读数据概况工具，不能代替源数据资格和科学判断。每次回复说明**当前阶段、所用依据、产物、门禁状态、下一步模块**，不把测试通过或进程退出码当作科学结果可信的证明。
+只围绕一个功能单元工作。正式文档默认中文；`specs/`、`reports/`、`audits/` 只存 Markdown。一次性探查文件用毕删除；SDD 临时工作区留存供 Agent 复查与恢复。`scripts/profile_data.py` 是可选的只读数据概况工具，不能代替源数据资格和科学判断。每次回复说明**当前阶段、所用依据、产物、门禁状态、下一步模块**，不把测试通过或进程退出码当作科学结果可信的证明。

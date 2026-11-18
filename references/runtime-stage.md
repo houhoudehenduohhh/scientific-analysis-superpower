@@ -56,3 +56,5 @@ assert no_unreviewed_upstream_output_is_used
 按 [Runtime Report 模板](../templates/runtime-report.md)在 `audits/runtime/report/` 下保存步骤尝试及节点汇总的事实记录，例如 `runtime_<node>_<step>_rNN_<step_run_hash前12位>.md` 和 `runtime_<node>_<run_hash前12位>.md`；多次运行保留各自的记录，不以新记录覆盖仍需追溯的旧运行。它是供后续独立审计的执行证据，不是 Runtime Audit；包含成功、失败或部分完成的事实、全部尝试和结果清单，不写“已通过 Runtime Audit”。一次性探查脚本、预览表和临时 JSON/CSV 用毕删除；被审计引用的异常证据先转入该记录或结果记录。`reports/` 仅在 Runtime Finish 生成面向结果验收的交付说明。
 
 当前获准验收节点的步骤完成后停止并进入[节点 Runtime Audit](runtime-audit.md)；未完成时保留事实和返工记录，按上方自动循环或返回阶段处理。正式节点审计一经生成即停在用户门禁，不得自行批准后续节点。所有节点接受后再进行独立的全链条结果审计；未获接受前不得 Runtime Finish。
+
+扩展任务按完整 Task ID 和 AC 绑定运行证据。复用产物前核对身份、接口和资格，并沿批准依赖图重验受影响输出。
