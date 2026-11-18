@@ -6,8 +6,6 @@ Runtime 有两类正式审计：Build Plan 指定的**阶段性验收节点审�
 
 ## 审查输入与范围
 
-按[阶段模型规则](model-selection.md)显式派发节点和最终全链条 Reviewer，包括修复后的复审。
-
 读取当前已批准的 Reader Spec、Build Plan、已接受的 Building Audit、`audits/runtime/report/` 中当前 Runtime Report、实际配置与日志、输入身份、正式结果和既往相关 Runtime Audit。用 [审查提示词](../templates/runtime-auditor-prompt.md) 和 [报告模板](../templates/runtime-audit-report.md)。Reviewer 只写审计报告，不修改源数据、代码、配置或结果，也不自行重跑正式生产任务。
 
 节点审计先核对该节点全部步骤的独立审查、五轮内返工记录、逐 AC 状态、前置节点身份及跨任务交接。初审及最多一次针对已批准运行条件的集中修复与局部复审先存 `.tmp/runtime/<node_id>/`；这不是正式报告，也没有 `runtime_audit_id`。代码或科学方案修复按返回阶段及其门禁处理，不能借集中修复跨过 Building/Proposal。循环结束后才形成一份正式节点报告并停下。未关闭实质问题记 `CHANGES_REQUIRED` 或 `BLOCKED`，不能强行生成通过裁决。

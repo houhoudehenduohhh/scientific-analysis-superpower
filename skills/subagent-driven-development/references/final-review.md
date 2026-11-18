@@ -9,7 +9,7 @@ from the working tree you're executing in (MERGE_BASE = the commit the
 branch started from, e.g. `git merge-base main HEAD`) and include the
 printed path in the final review dispatch, so the final reviewer reads
 one file instead of re-deriving the branch diff with git commands. Dispatch
-with the whole-branch settings in the [stage model policy](../../../references/model-selection.md), using
+with model `gpt-6.2-sol` and reasoning effort `medium` as creation arguments, using
 [code-reviewer.md](../../requesting-code-review/code-reviewer.md). Point it at
 the ledger's deferred-minor and parked lines so it can triage which must be
 fixed before user acceptance.
@@ -25,7 +25,7 @@ formal Building Audit: do not assign it an `audit_id`, write it under
 verdict alone is not the scientific Building Audit.
 
 If the initial review finds implementation defects fixable within the
-approved Reader Spec and Build Plan, dispatch ONE fix subagent with the
+approved Reader Spec and Build Plan, dispatch ONE fix subagent with model `gpt-6.2-sol` and reasoning effort `low` and give it the
 complete findings list — not one fixer per finding. Per-finding fixers each
 rebuild context and re-run suites; a real session's final-review fix wave
 cost more than all its tasks combined. Then run exactly one scoped re-review
@@ -51,7 +51,9 @@ report and independent review. Include the reports in the formal reviewer's
 evidence; an inconsistent or missing report is a documentation finding, not
 permission to claim the task complete.
 
-Then have an independent reviewer synthesize ONE formal report using the
+Have an independent reviewer synthesize ONE formal report. If dispatching a
+reviewer for synthesis, pass model `gpt-6.2-sol` and reasoning effort
+`medium` as creation arguments. Use the
 [Building Audit template](../../../templates/building-audit-report.md) under
 the functional unit's `audits/building/`. Include the initial review, any
 fix and re-review evidence, every ledger `Ruling:`, deferred finding, and

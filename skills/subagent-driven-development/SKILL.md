@@ -136,12 +136,6 @@ ledger.
 For scientific analysis, rulings cannot change an approved scientific
 decision or materially rewrite the Build Plan without user approval.
 
-## Model Selection
-
-Use the shared [stage model policy](../../references/model-selection.md).
-Set both the model and reasoning effort in every implementer, reviewer and
-re-review dispatch. For fix rounds 4–5, apply the escalation rule there.
-
 ## The Task Loop
 
 **Small same-shape work:** when the plan lists several small edits of the

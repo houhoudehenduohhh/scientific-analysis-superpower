@@ -6,8 +6,6 @@
 
 ## Proposal 执行顺序
 
-开始 Proposal 前，按[阶段模型规则](model-selection.md)为主会话选择推理档位。
-
 1. 确定最小功能单元和写入位置，按 [brainstorming](../skills/brainstorming/SKILL.md) 先阅读项目约定、既有规格和源数据证据，再澄清会改变方案的事项。对迁移中的项目，可从旧规格提取已确认决定，新文件仍需按当前门禁批准。
 2. 确认源数据的确切身份、版本、来源、覆盖范围、结构与资格证据。区分已确认事实、候选方案和待确认事项。只询问会实质影响方案、实现或写入位置的问题。
 3. 先按 [Reader Spec 模板](../templates/reader-spec.md) 写 `reader_spec.md`。明确目标、分析单位、概念算法、关键口径、适用的统计假设和质量风险、科学验收条件及结论边界。项目规模需要时，按 [builder check](../skills/brainstorming/builder-check-prompt.md) 独立检查实质缺口，修订当前文件；检查不产出第三份正式文档。
