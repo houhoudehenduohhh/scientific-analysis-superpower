@@ -12,6 +12,10 @@
 - 实际输入、配置、环境、日志与结果清单：
 - `runtime_audit_id`、`parent_runtime_audit_id`（首次写“无”）：
 
+- 本轮审查目的（一句话，说明要验收的任务、节点或结果）：
+
+- 本轮步骤的 Task ID、Task MD 指纹及与获批记录和运行清单的核对结果：
+
 ## Strengths · 经证据支持的结论
 
 - 

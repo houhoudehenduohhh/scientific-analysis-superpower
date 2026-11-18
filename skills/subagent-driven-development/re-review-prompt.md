@@ -21,7 +21,7 @@ Subagent (general-purpose):
 
     ## The Task
 
-    Read the task brief: [BRIEF_FILE]
+    Read the task brief: [BRIEF_FILE] (approved task snapshot, including its full ID)
 
     ## The Findings Under Verification
 

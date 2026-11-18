@@ -1,12 +1,13 @@
 # SDD 阶段架构与待决事项（讨论稿）
 
-> **待检查状态栏** · 以下事项需在首次实际使用中核实；“待实测”表示已有执行规则，尚未完成实战 check。
+> **SDD 决策与检查状态**
 >
-> | 检查项 | 状态 | 待确认内容 |
+> | 检查项 | 状态 | 当前结论 |
 > |---|---|---|
 > | Task Review 是否需要人工介入 | ☑ 已确定 | 每任务由独立 Reviewer 审查，Agent 在已批准计划内自动修复和复审；每任务最多五轮，仍有实质缺陷则交用户裁决。 |
-> | Building 与 Runtime 的承接 | ☐ 待实测 | 已写入 Runtime、Runtime Audit 和 Runtime Finish 规则；需用实际运行检验性能问题、代码返工及重审路线。 |
-> | SDD 临时文件的裁决 | ☐ 未完成 | 确定任务报告、Review、diff 与账本的保留期限和删除条件。 |
+> | Building 与 Runtime 的承接 | ☑ 已完成 | Building 到 Runtime 的承接规则已接入 Runtime、Runtime Audit 和 Runtime Finish。 |
+> | SDD 临时文件的裁决 | ☑ 已确定 | 保留 SDD 临时工作区中的任务报告、审查记录、差异包和账本，供 Agent 复查与恢复。人工验收使用正式报告。 |
+> | Task Reviewer 的脚本读取范围 | ☑ 沿用现有规则 | 以任务 diff 为主要审查输入。关键函数因 diff 截断而无法判断时可打开脚本，也可针对明确风险查看必要的调用点或依赖。 |
 
 ![mermaid-diagram](E:\10Project\scientific-analysis-superpower\docs\mermaid-diagram.png)
 
@@ -44,7 +45,7 @@ Proposal 先产出并获得用户批准的 Reader Spec 与 Build Plan。Reader S
 
 独立 Task Reviewer 使用 `task-reviewer-prompt.md`，读取该任务 brief、实现报告、完整 diff 和约束，分别给出**任务契约符合性**与**代码质量**结论；完整报告保存为临时 `task-N-review.md`。`cannot-verify.md` 处理仅凭 diff 无法证明的要求。Review 意见应先核实：证据成立则修复，依据不足则补查，不成立则记录反证。`receiving-code-review/SKILL.md` 可以辅助核实。现已根据首次实际 Building 确定：任务级 Review 由 Agent 在已批准计划内自行核实、修复与复审；每任务最多五轮，实质问题仍未解决时停下交用户裁决。
 
-有实质缺陷时，`fix-loop.md` 将原发现交回实现者；每轮修复提交后，`re-review-prompt.md` 只核对原发现与本轮修复差异，留下 `task-N-re-review.md` 和账本记录。最多五轮；前三轮优先原实现者，后两轮换新实现者并升级能力。五轮后仍有影响后续可信度的缺陷，暂停依赖任务并交用户裁决；非阻断问题可以带证据进入最终报告，由用户决定是否接受。任务级审查不代替整个分支的最终审查。
+有实质缺陷时，`fix-loop.md` 将原发现交回实现者；每轮修复提交后，`re-review-prompt.md` 只核对原发现与本轮修复差异，留下 `task-N-re-review.md` 和账本记录。最多五轮；前三轮优先原实现者，后两轮换新实现者，沿用固定模型和推理档位。五轮后仍有影响后续可信度的缺陷，暂停依赖任务并交用户裁决；非阻断问题可以带证据进入最终报告，由用户决定是否接受。任务级审查不代替整个分支的最终审查。
 
 ## 4. 整体 Building Audit 与人工裁决
 
@@ -73,32 +74,32 @@ Proposal 先产出并获得用户批准的 Reader Spec 与 Build Plan。Reader S
 
 回归测试用于固定**可以明确指定预期的错误行为**。不能为迎合 Reviewer 的猜测凭空编造测试预期。冒烟测试验证脚本在小规模真实输入上的连接与执行；正式生产运行仍须经过 Building Audit 门禁。
 
-### Building 与 Runtime 的承接（规则已接入，待实测）
+### Building 与 Runtime 的承接（已接入）
 
 **Building 的 smoke test 发现的问题仍属于 Building。**例如真实小样本跑不通、输出口径错误、内存溢出，或速度明显无法支撑预定规模，都应在 Building 修复、补适当测试或性能基准，并复审受影响提交。不能因为是在“运行脚本”时发现，就推迟到正式 Runtime。若速度仅有可选优化空间而仍满足已批准的运行预算，可以记录为非阻断限制供用户决定。
 
-**Runtime 才暴露的问题需要分类返回。**数据版本或输入资格不符、科学口径需变更时回 Proposal；算法转代码、调度、资源或恢复机制有缺陷时回 Building，修复提交须重新通过 Building Audit；只是运行参数、环境或可恢复的执行故障时，在不改变已审代码与科学契约的前提下可留在 Runtime 处理并重新记录运行证据。正式运行结果的异常或不理想先记 Runtime Report 的事实、输入/代码指纹和影响，再由 Runtime Audit 判断是否修订 Spec、代码或运行配置。Runtime Report 不是审计裁决。上述路径已写入本项目的 Runtime 阶段规则，仍待真实功能单元验证。
+**Runtime 才暴露的问题需要分类返回。**数据版本或输入资格不符、科学口径需变更时回 Proposal；算法转代码、调度、资源或恢复机制有缺陷时回 Building，修复提交须重新通过 Building Audit；只是运行参数、环境或可恢复的执行故障时，在不改变已审代码与科学契约的前提下可留在 Runtime 处理并重新记录运行证据。正式运行结果的异常或不理想先记 Runtime Report 的事实、输入/代码指纹和影响，再由 Runtime Audit 判断是否修订 Spec、代码或运行配置。Runtime Report 不是审计裁决。上述路径已写入本项目的 Runtime 阶段规则。
 
 本地 Superpowers 的 SDD 到“任务 Review → 整体代码 Review → 分支收尾”为止；`verification-before-completion` 要求以实际测试证据支持完成声明，`finishing-a-development-branch` 在合并或 PR 前验证测试。检索其 skills 后，未见针对科研正式数据运行、结果审计或结果返工的独立 Runtime skill。本项目现已增加输入锁定、预检、运行指纹、运行报告、异常分流和 Runtime Audit 门禁。性能阈值由具体功能单元的已批准 Build Plan 给出；缺失时不能事后凭结果任意设定。
 
-## 6. 临时文件清单与清理待决
+## 6. 临时文件与留存策略
 
-当前 `sdd-workspace` 在功能单元内使用 `.tmp/sdd/<计划名>/`；计划不在该工作树时退到仓库 `.tmp/sdd/`。下表区分当前机制会生成的材料和运行时**可能**生成的材料，便于逐项决定保留期限。
+当前 `sdd-workspace` 在功能单元内使用 `.tmp/sdd/<计划名>/`；计划不在该工作树时退到仓库 `.tmp/sdd/`。下表区分当前机制会生成的材料和运行时**可能**生成的材料，便于区分留存证据与一次性文件。
 
-| 文件或目录 | 产生环节与用途 | 原版 Superpowers 的处理 | 本地建议／待决 |
+| 文件或目录 | 产生环节与用途 | 原版 Superpowers 的处理 | 本地处理 |
 |---|---|---|---|
-| `.tmp/sdd/.gitignore`、`<计划名>/plan-path` | 隔离临时工作区、绑定计划身份 | 对应工作区在仓库 `.superpowers/sdd/<计划名>/`，用 `.gitignore` 隔离并以 `plan-path` 绑定计划；最终审查干净且修复已合并后删除该计划工作区。 | 本地改为 `.tmp/sdd/`；何时删除待定。 |
-| `progress.md` | 任务状态、提交、裁决、返工恢复账本 | 先把所有 `Ruling:` 逐条复制到最终给用户的消息，再删除计划工作区；Git 历史保留提交。 | 正式报告要接收必要追溯；原件是否保留待定。 |
-| `task-N-brief.md` | Build Plan 单任务原文的派发快照 | 随计划工作区删除；计划正文仍在。 | 是否在审计接受后删除待定。 |
-| `task-N-report.md`、修复追加记录 | 实现者的测试命令、输出、提交和顾虑 | 随计划工作区删除；提交与测试代码留在 Git。 | 重要证据应进入正式报告；原件是否留存待定。 |
-| `review-BASE..HEAD.diff`、修复差异包 | Reviewer 的完整 Git 审查输入 | 随计划工作区删除；提交差异可由 Git 重新生成。 | 是否保留快照待定。 |
-| `task-N-review.md`、`task-N-re-review.md` | 任务级双结论和逐条复审 | 原版完整 Reviewer 结论主要回到对话，账本记录摘要；没有强制保存这两类独立文件。 | 本地增加文件化复审；正式报告应汇总未解决发现，原件是否保留待定。 |
+| `.tmp/sdd/.gitignore`、`<计划名>/plan-path` | 隔离临时工作区、绑定计划身份 | 对应工作区在仓库 `.superpowers/sdd/<计划名>/`，用 `.gitignore` 隔离并以 `plan-path` 绑定计划；最终审查干净且修复已合并后删除该计划工作区。 | 本地改为 `.tmp/sdd/`；保留工作区供 Agent 复查。 |
+| `progress.md` | 任务状态、提交、裁决、返工恢复账本 | 先把所有 `Ruling:` 逐条复制到最终给用户的消息，再删除计划工作区；Git 历史保留提交。 | 正式报告要接收必要追溯；原件保留供 Agent 恢复。 |
+| `task-N-brief.md` | Build Plan 单任务原文的派发快照 | 随计划工作区删除；计划正文仍在。 | 审计接受后保留派发快照。 |
+| `task-N-report.md`、修复追加记录 | 实现者的测试命令、输出、提交和顾虑 | 随计划工作区删除；提交与测试代码留在 Git。 | 重要证据应进入正式报告；原件保留供 Agent 复查。 |
+| `review-BASE..HEAD.diff`、修复差异包 | Reviewer 的完整 Git 审查输入 | 随计划工作区删除；提交差异可由 Git 重新生成。 | 保留差异快照。 |
+| `task-N-review.md`、`task-N-re-review.md` | 任务级双结论和逐条复审 | 原版完整 Reviewer 结论主要回到对话，账本记录摘要；没有强制保存这两类独立文件。 | 本地增加文件化复审；正式报告应汇总未解决发现，原件保留供 Agent 复查。 |
 | 一次性探查脚本、临时 JSON/CSV、预览或特征摘要 | 调试与人工查看时可能生成，不是 SDD 固定产物 | 原版 SDD 没有针对这些科研临时材料的统一规则。 | 用毕删除；需要引用的证据先写入正式报告。 |
 | `.pytest_cache/`、`__pycache__/`、`.pyc`、coverage 缓存 | pytest、Python 或覆盖率工具可能生成 | 原版 SDD 不规定这些语言或工具特定缓存的处理。 | 可再生缓存用毕删除；正式测试代码保留在 `scripts/pytest/`。 |
 | PID、进度状态文件 | 长任务运行时可能生成 | 原版 SDD 不涉及科研长任务的 PID 管理。 | 仅作运行状态，集中到一个临时运行目录；结束后删除。 |
 | 测试输出、冒烟结果、正式运行日志 | 命令和小样本运行可能产生 | 原版要求实现报告给出测试证据，最终分支收尾再跑完整测试；没有科研正式运行产物规范。 | 与纯缓存分开；有审计价值的命令、输入、结果和日志按功能单元约定保留。 |
 
-**尚未确定：**在 Building Audit 被用户接受后，任务级报告、review diff、账本要全部删除、保留到 Runtime Finish，还是压缩归档。当前执行规则已暂缓自动删除，等待用户裁定。
+**留存决定：**Building Audit 获接受后仍保留任务级报告、Review、diff 和账本，供 Agent 复查和恢复。人工验收查阅正式报告。
 
 ## 7. 辅助 Skill 的边界与待确认事项
 
@@ -119,4 +120,4 @@ Proposal 先产出并获得用户批准的 Reader Spec 与 Build Plan。Reader S
 | 技能结构与文档引用 | 已核对 | Skill 校验通过；本地 Markdown 链接检查无断链；相关 Bash 脚本语法检查通过。 |
 | 完整 SDD 实战链条 | 未完成 | 尚未用获批准的真实 Build Plan 跑通实现、提交、任务 Review、返工、整体审查和用户门禁。 |
 
-**仍待裁定：**SDD 临时材料的最终保留／删除条件。Task Review 的 Agent 自动闭环已由首次实际 Building 和用户确认；Building 与 Runtime 的承接规则仍需在正式运行中验证。
+Task Review 自动闭环、Building 与 Runtime 的承接及 SDD 临时工作区留存决定，见文首状态栏。

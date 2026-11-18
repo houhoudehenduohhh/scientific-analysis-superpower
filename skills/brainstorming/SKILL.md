@@ -87,7 +87,7 @@ brainstorming:
 - **They asked for it** (by name, by invoking it, or by asking for a
   design discussion): end there. They want this conversation.
 - **They didn't:** they may not want a conversation at all. End with a
-  light, one-line offer to draft the two Proposal documents from the
+  light, one-line offer to draft the Proposal documents from the
   available evidence. Skipping discussion does not bypass their joint gate.
 
 That's the whole message.
@@ -247,7 +247,7 @@ not create a separate formal review or audit file.
 
 <HARD-GATE>
 Nothing gets built until the user explicitly approves the current
-Reader Spec and Build Plan together. Building includes writing product
+Reader Spec, Build Plan and in-scope Task MDs together. Building includes writing product
 code, code scaffolding, installing dependencies, creating projects, and
 invoking an implementation skill. Reading, read-only data inspection,
 empty functional-unit directory initialization, and drafting the Build
@@ -266,4 +266,4 @@ superpowers:writing-plans. Then stop for approval of both documents.
 | "I'll fill in sensible defaults" | Good. Say them out loud. A default they never heard is one they couldn't reject. |
 | "I've answered their questions, so I'll write the doc" | Lay out the approaches first, in a message of their own (or, when nothing was open from the start, in your first message's short design). |
 | "I should explain the process first" | Ask your question. The process shows itself. |
-| "They said 'sounds good' to the idea" | Approval covers what you showed them. Unwritten Reader Spec and Build Plan are not approved. |
+| "They said 'sounds good' to the idea" | Approval covers what you showed them. Approval must identify the Reader Spec, Build Plan and in-scope Task MDs. |

@@ -95,3 +95,5 @@
 - decision: pending（pending / approved / rejected）
 - approved_by：
 - approved_at：
+
+在已批准的研究边界内，补充分析的具体变体见 Build Plan 索引中的 Task MD。

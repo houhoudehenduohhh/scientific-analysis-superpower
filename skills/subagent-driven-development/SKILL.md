@@ -130,7 +130,7 @@ authority the plan argues from, and conflicts inside the plan resolve
 against it. A plan with no reachable spec gets a ledger note saying so —
 rulings made without one are provisional.
 
-Before dispatching Task 1, read [references/preflight.md](references/preflight.md)
+Before dispatching the first task of each approved plan revision, read [references/preflight.md](references/preflight.md)
 and run the conflict scan it describes. Its table and rulings go in the
 ledger.
 For scientific analysis, rulings cannot change an approved scientific
@@ -163,9 +163,9 @@ Record BASE (`git rev-parse HEAD`) before dispatching — the review package
 and fix-round diffs need it.
 
 - **Task brief:** before dispatching an implementer, run this skill's
-  `bash scripts/task-brief PLAN_FILE N` by its absolute path, from the
+  `bash scripts/task-brief PLAN_FILE TASK_ID` by its absolute path, from the
   working tree you're executing in — it extracts the task's full text to a
-  uniquely named file and prints the path. Compose the dispatch so the
+  uniquely named file and prints the path. For indexed plans, match the complete ID and verify the source and extracted snapshot bytes against the approved Task MD fingerprint before dispatch. Keep the verified snapshot for the implementer, reviewer and re-review. Use the full ID in the ledger, artifacts and review dispatch. Compose the dispatch so the
   brief stays the single source of
   requirements. Your dispatch should contain: (1) one line on where this
   task fits in the project; (2) the brief path, introduced as "read this
@@ -275,12 +275,14 @@ round writes, and your memory of it does not survive compaction.
 When the review comes back clean, append the completion line to the ledger in the same
 message as your other bookkeeping:
 
-- `Task <N>: complete (commits <base7>..<head7>, review clean)`
+- `Task <full ID>: complete (commits <base7>..<head7>, review clean)`
+
+For indexed plans, append the approved Task MD fingerprint to this line and record it in the ledger before the first dispatch so mid-loop resumption can verify it.
 
 For scientific analysis, after the independent task review/re-review, use
 [the human task report template](../../templates/task-human-report.md) to
 write one Chinese-content Markdown report per task under the functional unit's
-`audits/building/report/`, named `task-NN-human-report.md`. Keep the implementer's technical `task-N-report.md` and
+`audits/building/report/`, named `task-<N>-human-report.md`. Keep the implementer's technical `task-N-report.md` and
 review records in the SDD workspace. The human report must trace every
 approved AC to evidence or an explicit unverified status and map each repair
 to its affected AC; it does not create a per-task human approval gate. Link

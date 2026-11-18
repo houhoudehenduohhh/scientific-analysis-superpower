@@ -41,7 +41,7 @@ deliverable needs them; split only where a reviewer could meaningfully
 reject one task while approving its neighbor. Each task ends with an
 independently testable deliverable.
 
-For scientific-analysis, use the Build Plan template to state each task's
+For scientific-analysis, use the standalone Task Spec template to state each task's
 human-readable purpose, included/excluded scope, and stable numbered
 acceptance criteria before implementation approval. Each criterion names an
 observable result or failure behavior and whether Building evidence or a
@@ -103,6 +103,8 @@ owns the code, in that task's own step style.]
 ```
 
 ## Task Structure
+
+For scientific analysis, use the Build Plan task index and [standalone Task Spec](../../templates/task-spec.md). Write one file per complete task ID, including extensions in the parent task directory. The inline example below applies to legacy and other plans.
 
 ````markdown
 ### Task N: [Component Name]
@@ -191,8 +193,8 @@ If you find issues, fix them inline. No need to re-review — just fix and move 
 
 ## Execution Handoff
 
-For scientific-analysis, submit the current Reader Spec and Build Plan
-together for explicit Proposal approval, then stop. Planning does not
+For scientific-analysis, submit the current Reader Spec, Build Plan and
+Task MDs in scope together for explicit Proposal approval, then stop. Planning does not
 authorize implementation. The execution options below apply outside this
 workflow.
 

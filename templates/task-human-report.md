@@ -1,6 +1,6 @@
 # Task NN｜供人工验收的任务报告
 
-> 保存为 `audits/building/report/task-NN-human-report.md`。正文中文、文件名英文。依据批准的 Build Plan Task、技术报告、独立 Task Review／Re-review 和适用的整体 Review；绑定所审 Spec／Plan 及代码提交。整理已有证据不等于重新运行测试，也不代表用户已接受 Building Audit。
+> 保存为 `audits/building/report/task-<N>-human-report.md`。正文中文、文件名英文。依据批准的 Build Plan Task、技术报告、独立 Task Review／Re-review 和适用的整体 Review；绑定所审 Spec／Plan 及代码提交。整理已有证据不等于重新运行测试，也不代表用户已接受 Building Audit。
 
 ## 任务目的与边界
 
@@ -18,7 +18,7 @@
 
 每轮修复将审查 finding、受影响 AC、修改与独立复核对应起来；无修复则写“无”。整体审查后的集中修复若影响本任务，也应在这里更新。不得把未复审的修改写成已验收。
 
-| 轮次／finding | 对应 AC | 修复与复核结果 |
+| 轮次／finding 与本轮目的 | 对应 AC | 修复与复核结果 |
 |---|---|---|
 |  |  |  |
 

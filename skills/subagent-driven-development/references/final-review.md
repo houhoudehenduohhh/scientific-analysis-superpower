@@ -65,5 +65,6 @@ claim acceptance. The creation of this formal report is the Building Audit
 Gate: present it and STOP for the user's decision on this exact version.
 Never auto-fix after a formal report with pending user decision. Do not
 merge, delete the temporary workspace, or start Runtime in the same turn.
-Retention and deletion of the temporary workspace still await the user's
-decision; do not clean it up automatically after audit acceptance.
+Keep the SDD workspace after audit acceptance for Agent review and recovery.
+
+For an extension, trace the whole affected chain against the current Reader Spec, Build Plan, approved Task MDs and branch diff. Identify changed interfaces, replacement outputs, relevant regression evidence, and which prior approvals or outputs can be reused after identity checks. Record scope and Task MD identities in the formal report.

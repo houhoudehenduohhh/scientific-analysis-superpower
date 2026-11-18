@@ -10,3 +10,5 @@ resume the loop at the next round. A ledger whose first line names a
 different plan file — or a stray ledger at the old flat path
 `.tmp/sdd/progress.md` — is another plan's progress: leave it in
 place and start your own, fresh.
+
+For indexed plans, recover progress by full task ID and approved task-file identity in the ledger. A parent task completion does not complete any extension. A changed task specification needs a current approval; reconcile affected evidence before resuming.

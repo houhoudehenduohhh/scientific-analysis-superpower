@@ -6,7 +6,7 @@
 
 在**每次正式运行前**核对并记录：
 
-1. 当前 `reader_spec.md` 和 `build_plan.md` 已获批准，源数据身份、资格与目标输出仍适用；
+1. 当前 `reader_spec.md` 和 `build_plan.md` 及拟执行步骤引用的 Task MD 已获批准，源数据身份、资格与目标输出仍适用；
 2. Building Audit 的结论为 `PASS`，或用户已明确接受 `PASS_WITH_NOTES` 的限制；`audit_user_decision=accepted`、`accepted_audit_id=audit_id`，且用户在看到这份报告后的后续消息明确授权运行；
 3. 待运行的代码提交与该 Building Audit 审查的 `HEAD` 一致；受审代码、依赖或会改变计算语义的配置若已变更，先返回 Building；
 4. 实际输入与 Reader Spec 的批准身份、版本和资格相符；写入目录、命令及预计资源在获批范围内。
@@ -16,7 +16,8 @@
 正式入口前必须逐项作阻塞式判断，任何一项为假或未知都不能启动命令：
 
 ```text
-assert spec_and_plan_approved_for_current_versions
+assert spec_plan_and_referenced_tasks_approved_for_current_versions
+assert current_spec_plan_and_task_identities_match_building_audit
 assert building_audit_status in {PASS, user_accepted_PASS_WITH_NOTES}
 assert audit_user_decision == accepted
 assert accepted_audit_id == current_audit_id
@@ -40,9 +41,9 @@ assert no_unreviewed_upstream_output_is_used
 - 使用批准的入口执行。运行日志写 `scripts/logs/`；配置与指纹写 `scripts/config/`；正式表格和图件分别写 `results/data/`、`results/plot/`。PID、进度与恢复状态共用 `scripts/logs/runtime/`，不作为科研结果。
 - 每次尝试记录开始/结束、退出码、失败与重试、实际资源和产物状态。只有获批准的运行参数范围内的环境、调度、缓存或可恢复故障可在 Runtime 内重试；不得在运行中静默改代码、换源数据或改统计口径。
 - 逐项核对预期输出是否存在、是否完整以及适用的 schema、样本量、分母、缺失、数值边界和收敛/优化状态。检查结果是运行事实与异常线索，不代替独立审计。性能明显不满足获批规模时记录计时与资源证据，交后续分类；需要改代码则返回 Building。
-- 为本次运行保存可追溯的清单：`run_id`、Building `audit_id`、Spec/Plan 指纹、代码提交、输入身份与指纹、配置指纹、完整命令、环境、输出路径和每项结果的大小/摘要或其他明确的身份依据。对清单的稳定序列化内容计算 SHA-256 作为 `run_hash`；说明采用的序列化和摘要方法，避免把路径或时间戳伪称为内容校验。不同运行或变更后的产物不得共用同一 `run_hash`。
+- 为本次运行保存可追溯的清单：`run_id`、Building `audit_id`、Spec/Plan 指纹、按完整 ID 绑定的 Task MD 指纹、代码提交、输入身份与指纹、配置指纹、完整命令、环境、输出路径和每项结果的大小/摘要或其他明确的身份依据。对清单的稳定序列化内容计算 SHA-256 作为 `run_hash`；说明采用的序列化和摘要方法，避免把路径或时间戳伪称为内容校验。不同运行或变更后的产物不得共用同一 `run_hash`。
 
-每步尝试记录 `step_id`、`attempt`、受审输入哈希、产物哈希与 `step_run_hash`；验收节点完成时，用固定排序的步骤哈希、上游已接受节点审计 ID、代码/Spec/Plan/配置身份计算该节点的 `run_hash`。后续节点只引用已接受的上游身份，不改写旧节点的 `run_hash`。最终全链条审计绑定按依赖顺序排列的已接受节点审计 ID 与节点 `run_hash` 所形成的 `chain_hash`；计算方法和清单须可复核。
+每步尝试记录 `step_id`、`attempt`、受审输入哈希、产物哈希与 `step_run_hash`；验收节点完成时，用固定排序的步骤哈希、上游已接受节点审计 ID、代码/Spec/Plan/Task MD/配置身份计算该节点的 `run_hash`。后续节点只引用已接受的上游身份，不改写旧节点的 `run_hash`。最终全链条审计绑定按依赖顺序排列的已接受节点审计 ID 与节点 `run_hash` 所形成的 `chain_hash`；计算方法和清单须可复核。
 
 ## 自动步骤审查与返工
 
@@ -56,3 +57,5 @@ assert no_unreviewed_upstream_output_is_used
 按 [Runtime Report 模板](../templates/runtime-report.md)在 `audits/runtime/report/` 下保存步骤尝试及节点汇总的事实记录，例如 `runtime_<node>_<step>_rNN_<step_run_hash前12位>.md` 和 `runtime_<node>_<run_hash前12位>.md`；多次运行保留各自的记录，不以新记录覆盖仍需追溯的旧运行。它是供后续独立审计的执行证据，不是 Runtime Audit；包含成功、失败或部分完成的事实、全部尝试和结果清单，不写“已通过 Runtime Audit”。一次性探查脚本、预览表和临时 JSON/CSV 用毕删除；被审计引用的异常证据先转入该记录或结果记录。`reports/` 仅在 Runtime Finish 生成面向结果验收的交付说明。
 
 当前获准验收节点的步骤完成后停止并进入[节点 Runtime Audit](runtime-audit.md)；未完成时保留事实和返工记录，按上方自动循环或返回阶段处理。正式节点审计一经生成即停在用户门禁，不得自行批准后续节点。所有节点接受后再进行独立的全链条结果审计；未获接受前不得 Runtime Finish。
+
+扩展任务按完整 Task ID 和 AC 绑定运行证据。复用产物前核对身份、接口和资格，并沿批准依赖图重验受影响输出。

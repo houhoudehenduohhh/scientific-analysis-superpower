@@ -22,7 +22,7 @@ Subagent (general-purpose):
 
     ## What Was Requested
 
-    Read the task brief: [BRIEF_FILE]
+    Read the task brief: [BRIEF_FILE] (approved task snapshot, including its full ID)
 
     Global constraints from the spec/design that bind this task:
     [GLOBAL_CONSTRAINTS]
