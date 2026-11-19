@@ -18,6 +18,8 @@ Building 只能通过 SDD 入口完成。任何代码改动、编译检查或单
 
 Building 入口先执行 [Build 门禁检查](references/build-gates.md)。没有可用 Git 工作树时，先调用 [Git 初始化脚本](skills/subagent-driven-development/scripts/ensure-git) 在项目中建立 Git，记录初始提交，再继续 SDD。禁止以无 Git 状态替代审计证据。
 
+SDD 状态由 [Harness](references/sdd-harness.md) 管理。协调者必须在每个任务和每轮修复前后使用 `sdd-harness.py` 检查合法状态转移。提示词不能单独改变阶段状态。
+
 状态必须显式记录。实现 Agent 中断、失败或返回非 DONE 时为 `building_incomplete`，禁止 Reviewer 完成判断、Final Review、Building Audit 和 Runtime。Task Reviewer 缺失时任务不能完成，Final Review 缺失时不能生成正式 Building Audit。最终回复必须列出当前状态、账本、任务 ID、提交范围、Task Review、Final Review 和 Building Audit 证据状态。
 
 Task Review 返回 `CHANGES_REQUIRED` 或存在 Critical/Important finding 时，状态必须变为 `fix_round_pending`。此状态只能执行“派发修复 Agent → 写修复报告和测试证据 → 生成修复差异 → Re-review → 记录 ADDRESSED/NOT_ADDRESSED”。在五轮上限前，禁止结束回复、推进下一个任务、进入 Final Review、生成 Building Audit 或进入 Runtime。修复循环必须通过 `scripts/check-fix-loop`，否则保持在当前 Task。

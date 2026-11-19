@@ -13,7 +13,7 @@ Pass the model and reasoning effort below as subagent creation arguments.
 Subagent (general-purpose):
   description: "Re-review Task N fix round R"
   model: "gpt-6.2-sol"
-  reasoning_effort: "medium"
+  reasoning_effort: "low"
   prompt: |
     You are re-reviewing one task's fix round. A previous review produced
     findings; an implementer has attempted to fix them. Your job is to

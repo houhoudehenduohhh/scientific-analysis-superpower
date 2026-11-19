@@ -1,6 +1,6 @@
 # Runtime 步骤独立审查提示词
 
-初审和复审均在创建子 Agent 的工具参数中传入 `model: gpt-6.2-sol` 和 `reasoning_effort: medium`。
+初审和复审均在创建子 Agent 的工具参数中传入 `model: gpt-6.2-sol` 和 `reasoning_effort: low`。
 
 仅供验收节点内部自动审查；不生成正式 `runtime_audit_id`，不代替节点或全链条 Runtime Audit。审查记录保存在 `audits/runtime/task-review/`，文件名含节点、步骤和尝试轮次。
 

@@ -25,7 +25,7 @@ formal Building Audit: do not assign it an `audit_id`, write it under
 verdict alone is not the scientific Building Audit.
 
 If the initial review finds implementation defects fixable within the
-approved Reader Spec and Build Plan, dispatch ONE fix subagent with model `gpt-6.2-sol` and reasoning effort `medium` and give it the
+approved Reader Spec and Build Plan, dispatch ONE fix subagent with model `gpt-6.2-sol` and reasoning effort `low` and give it the
 complete findings list — not one fixer per finding. Per-finding fixers each
 rebuild context and re-run suites; a real session's final-review fix wave
 cost more than all its tasks combined. Then run exactly one scoped re-review

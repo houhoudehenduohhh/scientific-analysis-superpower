@@ -8,7 +8,7 @@ Pass the model and reasoning effort below as subagent creation arguments.
 Subagent (general-purpose):
   description: "Implement Task N: [task name]"
   model: "gpt-6.2-sol"
-  reasoning_effort: "medium"
+  reasoning_effort: "low"
   prompt: |
     You are implementing Task N: [task name]
 

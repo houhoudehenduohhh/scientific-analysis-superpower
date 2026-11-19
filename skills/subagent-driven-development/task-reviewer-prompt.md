@@ -13,7 +13,7 @@ Pass the model and reasoning effort below as subagent creation arguments.
 Subagent (general-purpose):
   description: "Review Task N (spec + quality)"
   model: "gpt-6.2-sol"
-  reasoning_effort: "medium"
+  reasoning_effort: "low"
   prompt: |
     You are reviewing one task's implementation: first whether it matches its
     requirements, then whether it is well-built. This is a task-scoped gate,
