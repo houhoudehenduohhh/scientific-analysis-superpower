@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 import tempfile
+import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -49,6 +51,13 @@ def digest(path):
 
 def lock(root):
     p=Path(root)/".harness.lock"
+    if p.exists():
+        try:
+            pid=int(p.read_text(encoding="ascii").strip()); os.kill(pid, 0)
+        except (ValueError, OSError):
+            p.unlink(missing_ok=True)
+        else:
+            raise SystemExit("harness locked by another process")
     try:
         fd=os.open(p, os.O_CREAT|os.O_EXCL|os.O_WRONLY)
         os.write(fd, str(os.getpid()).encode()); os.close(fd)
@@ -64,23 +73,72 @@ def write(path, value):
         f.flush(); os.fsync(f.fileno())
     os.replace(tmp, path)
 
+def evidence_record(raw):
+    p=Path(raw).resolve()
+    if not p.is_file(): raise SystemExit("missing evidence: " + str(p))
+    return {"path":str(p), "sha256":digest(p)}
+
+def evidence_records(raw):
+    return [evidence_record(x) for x in raw.split(",") if x]
+
+def validate_evidence(state):
+    for ref in state.get("refs", {}).values():
+        if isinstance(ref, dict) and (not Path(ref["path"]).is_file() or digest(ref["path"]) != ref.get("sha256")):
+            raise SystemExit("reference fingerprint changed: " + str(ref.get("path")))
+    for records in state.get("evidence", {}).values():
+        if isinstance(records, dict): records=[records]
+        for rec in records or []:
+            if isinstance(rec, str): continue
+            p=Path(rec["path"])
+            if not p.is_file() or digest(p) != rec.get("sha256"):
+                raise SystemExit("evidence fingerprint changed: " + str(p))
+
+def sync_manifests(root, state):
+    refs=state.get("refs", {})
+    common={"reader_spec":refs.get("reader_spec"), "build_plan":refs.get("build_plan"), "building_manifest":"building/manifest.json", "runtime_manifest":"runtime/manifest.json"}
+    write(root/"analysis-state.json", {"phase":state.get("phase"), "status":state.get("status"), **common, "next_allowed_actions":state.get("next_allowed_actions", [])})
+    bp=read(root/"building/manifest.json") if (root/"building/manifest.json").exists() else {}
+    bp.update({"phase":"building", "status":state.get("status"), "reader_spec":refs.get("reader_spec"), "build_plan":refs.get("build_plan"), "runtime_manifest":"runtime/manifest.json"})
+    write(root/"building/manifest.json", bp)
+    rp=read(root/"runtime/manifest.json") if (root/"runtime/manifest.json").exists() else {}
+    rp.update({"phase":"runtime", "reader_spec":refs.get("reader_spec"), "build_plan":refs.get("build_plan"), "building_manifest":"building/manifest.json"})
+    write(root/"runtime/manifest.json", rp)
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("state")
     ap.add_argument("action", choices=["init", "status", "transition", "allowed", "verify", "register-task", "gate"])
     ap.add_argument("value", nargs="?")
     ap.add_argument("--evidence", default="")
+    ap.add_argument("--artifact", default="")
+    ap.add_argument("--to")
+    ap.add_argument("--action", dest="allowed_action")
     ap.add_argument("--user-accepted", action="store_true")
+    ap.add_argument("--reader-spec", default="")
+    ap.add_argument("--build-plan", default="")
+    ap.add_argument("--affected-task", action="append", default=[])
+    ap.add_argument("--reusable-output", action="append", default=[])
+    ap.add_argument("--invalidated-output", action="append", default=[])
+    ap.add_argument("--inheritance-constraint", action="append", default=[])
     args = ap.parse_args()
     path = Path(args.state)
     if args.action == "init":
-        if path.exists(): raise SystemExit("state already exists")
-        write(path, {"phase": "building", "status": "building_incomplete", "task_id": None, "fix_round": 0, "evidence": {}})
+        lockfile=lock(path.parent)
+        try:
+            if path.exists(): raise SystemExit("state already exists")
+        except BaseException:
+            lockfile.unlink(missing_ok=True); raise
+        refs={}
+        for name, raw in (("reader_spec",args.reader_spec),("build_plan",args.build_plan)):
+            if raw: refs[name]=evidence_record(raw)
+        state={"phase": "building", "status": "building_incomplete", "task_id": None, "fix_round": 0, "evidence": {}, "refs": refs, "next_allowed_actions": NEXT["building_incomplete"]}
+        write(path, state)
         root = path.parent
-        write(root / "analysis-state.json", {"phase": "building", "status": "building_incomplete", "building_manifest": "building/manifest.json", "runtime_manifest": "runtime/manifest.json", "next_allowed_actions": ["dispatch_implementer"]})
-        write(root / "building" / "manifest.json", {"phase": "building", "status": "building_incomplete", "tasks": {}, "final_review": "pending", "building_audit": "blocked", "evidence": {}})
-        write(root / "runtime" / "manifest.json", {"phase": "runtime", "status": "blocked", "authorized_nodes": [], "steps": {}, "milestone_audit": "blocked", "final_chain_audit": "blocked"})
+        write(root / "analysis-state.json", {"phase": "building", "status": "building_incomplete", "building_manifest": "building/manifest.json", "runtime_manifest": "runtime/manifest.json", "reader_spec": refs.get("reader_spec"), "build_plan": refs.get("build_plan"), "next_allowed_actions": NEXT["building_incomplete"]})
+        write(root / "building" / "manifest.json", {"phase": "building", "status": "building_incomplete", "tasks": {}, "final_review": "pending", "building_audit": "blocked", "reader_spec": refs.get("reader_spec"), "build_plan": refs.get("build_plan"), "runtime_manifest": "runtime/manifest.json"})
+        write(root / "runtime" / "manifest.json", {"phase": "runtime", "status": "blocked", "authorized_nodes": [], "steps": {}, "milestone_audit": "blocked", "final_chain_audit": "blocked", "reader_spec": refs.get("reader_spec"), "build_plan": refs.get("build_plan"), "building_manifest": "building/manifest.json"})
         with (root / "events.jsonl").open("a", encoding="utf-8") as f: f.write(json.dumps({"action": "init", "timestamp": datetime.now(timezone.utc).isoformat()}) + "\n")
+        lockfile.unlink(missing_ok=True)
         return
     lockfile=lock(path.parent)
     try:
@@ -90,52 +148,70 @@ def main():
 
 def _main(args, path):
     state = read(path)
+    validate_evidence(state)
     current = state["status"]
     root=path.parent
     if args.action == "status":
         print(json.dumps(state, ensure_ascii=False, indent=2)); return
     if args.action == "verify":
-        paths = [Path(x) for x in args.evidence.split(",") if x]
-        missing = [str(x) for x in paths if not x.is_file()]
-        if missing: raise SystemExit("missing evidence: " + ", ".join(missing))
-        print(json.dumps({str(x):digest(x) for x in paths}, ensure_ascii=False)); return
+        print(json.dumps(evidence_records(args.artifact or args.evidence), ensure_ascii=False)); return
     if args.action == "gate":
         if current in {"building_incomplete", "task_review_pending", "fix_round_pending", "re_review_pending"}:
             if not state.get("task_id") and not state.get("tasks"):
                 raise SystemExit("gate blocked: no current task evidence")
         if current == "building_audit_gate" and not state.get("evidence", {}).get("building_audit"):
             raise SystemExit("gate blocked: Building Audit evidence missing")
+        workspace=Path(args.artifact or root)
+        scripts=Path(__file__).parent
+        if args.evidence:
+            parts=args.evidence.split(",")
+            if len(parts) >= 1:
+                audit=parts[1] if len(parts) > 1 else ""
+                subprocess.run(["bash", str(scripts/"check-building-gate"), str(workspace), audit], check=True)
+            if len(parts) >= 4:
+                subprocess.run(["bash", str(scripts/"check-fix-loop"), *parts[2:5]], check=True)
         print("gate passed"); return
     if args.action == "register-task":
         if not args.value: raise SystemExit("register-task requires TASK_ID")
         task_id = args.value
-        if not (task_id.startswith("T") and task_id[1:].replace("-EXT", "").isdigit()):
+        if not re.fullmatch(r"T\d+(?:-EXT\d+)?", task_id):
             raise SystemExit("invalid task ID")
-        spec=Path(args.evidence) if args.evidence else None
-        if spec and not spec.is_file(): raise SystemExit("missing Task MD")
+        if not args.evidence: raise SystemExit("register-task requires --evidence TASK_MD")
+        spec=Path(args.evidence)
+        if not spec.is_file(): raise SystemExit("missing Task MD")
         parent=None if "-EXT" not in task_id else task_id.split("-EXT")[0]
         if parent and parent not in state.get("tasks", {}): raise SystemExit("parent task not registered")
-        state.setdefault("tasks", {})[task_id] = {"status": "building_incomplete", "parent_task_id": parent, "task_spec_sha256": digest(spec) if spec else None, "affected_outputs": []}
+        extension=parent is not None
+        if extension and (not args.affected_task or not args.reusable_output or not args.invalidated_output or not args.inheritance_constraint):
+            raise SystemExit("extension requires affected-task, reusable-output, invalidated-output and inheritance-constraint")
+        state.setdefault("tasks", {})[task_id] = {"status": "building_incomplete", "parent_task_id": parent, "task_kind": "extension" if extension else "base", "task_spec_sha256": digest(spec), "affected_tasks": args.affected_task, "reusable_outputs": args.reusable_output, "invalidated_outputs": args.invalidated_output, "inheritance_constraints": args.inheritance_constraint, "next_allowed_actions": ["dispatch_implementer"]}
+        state["task_id"] = task_id
         write(path.parent/"building"/"manifest.json", {**read(path.parent/"building"/"manifest.json"), "tasks":state["tasks"]})
-        write(path, state); print(task_id); return
-    if not args.value: raise SystemExit("transition/allowed requires target state")
-    target = args.value
+        write(path, state); sync_manifests(path.parent, state); print(task_id); return
+    if args.action == "allowed":
+        action=args.allowed_action or args.value
+        if not action: raise SystemExit("allowed requires --action ACTION")
+        allowed=NEXT.get(current, [])
+        if action not in allowed: raise SystemExit(f"action not allowed: {action} (allowed: {', '.join(allowed)})")
+        print(json.dumps({"allowed":True,"action":action,"state":current},ensure_ascii=False)); return
+    if not (args.to or args.value): raise SystemExit("transition requires --to STATE")
+    target = args.to or args.value
     if target not in STATES.get(current, set()):
         raise SystemExit(f"blocked transition: {current} -> {target}")
     if target == "runtime_authorized":
         evidence = state.get("evidence", {})
-        if not args.user_accepted or not evidence.get("building_audit"):
-            raise SystemExit("blocked: runtime authorization requires user acceptance and Building Audit evidence")
+        if not evidence.get("building_audit"):
+            raise SystemExit("blocked: Building Audit evidence missing")
+        if not args.user_accepted and not state.get("user_acceptance", {}).get("accepted"):
+            raise SystemExit("blocked: durable user acceptance required")
+        if args.user_accepted:
+            state["user_acceptance"]={"accepted":True,"accepted_at":datetime.now(timezone.utc).isoformat(),"accepted_state":current,"building_audit":evidence["building_audit"]}
     if args.evidence:
-        paths = [Path(x) for x in args.evidence.split(",") if x]
-        missing = [str(x) for x in paths if not x.is_file()]
-        if missing: raise SystemExit("missing evidence: " + ", ".join(missing))
-        state.setdefault("evidence", {})[target] = [str(x) for x in paths]
-    if args.action == "allowed":
-        print(json.dumps({"allowed":True,"actions":NEXT.get(target,[])},ensure_ascii=False)); return
+        state.setdefault("evidence", {})[target] = evidence_records(args.evidence)
     state["status"] = target
     state["next_allowed_actions"] = NEXT.get(target,[])
     write(path, state)
+    sync_manifests(root, state)
     if (root/"analysis-state.json").exists():
         a=read(root/"analysis-state.json"); a.update({"phase":state.get("phase"),"status":target,"next_allowed_actions":state["next_allowed_actions"]}); write(root/"analysis-state.json",a)
     for manifest in (root/"building"/"manifest.json",root/"runtime"/"manifest.json"):
