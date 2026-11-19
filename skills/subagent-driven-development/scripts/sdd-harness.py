@@ -46,11 +46,11 @@ PHASE_STATUSES = {
  "runtime_audit":{"milestone_audit_pending","milestone_audit_gate","final_chain_audit_pending"},
  "runtime_finish":{"runtime_finish_pending"}}
 ACTION_TARGETS = {
- "resume_or_redispatch_proposer":{"proposal"}, "resume_or_redispatch_implementer":{"building_incomplete"},
+ "resume_or_redispatch_proposer":{"building_incomplete"}, "resume_or_redispatch_implementer":{"building_incomplete"},
  "dispatch_task_reviewer":{"task_review_pending"}, "dispatch_fix_agent":{"fix_round_pending"}, "dispatch_reviewer":{"re_review_pending"},
  "dispatch_next_task":{"task_review_pending"}, "dispatch_final_review":{"final_review_pending"}, "create_building_audit":{"building_audit_pending"},
  "wait_for_user_decision":{"building_audit_gate","milestone_audit_gate","user_decision_pending"},
- "execute_runtime_step":{"runtime_step_pending","runtime_authorized"}, "dispatch_runtime_step_reviewer":{"runtime_step_review_pending"},
+ "execute_runtime_step":{"runtime_step_pending"}, "dispatch_runtime_step_reviewer":{"runtime_step_review_pending"},
  "retry_runtime_step":{"runtime_step_pending"}, "return_building":{"building_incomplete"}, "return_proposal":{"proposal"},
  "dispatch_milestone_audit":{"milestone_audit_pending"}, "dispatch_final_chain_audit":{"final_chain_audit_pending"}, "dispatch_runtime_finish":{"runtime_finish_pending"}}
 
