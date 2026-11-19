@@ -7,6 +7,7 @@ import os
 import tempfile
 import re
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -105,6 +106,11 @@ def sync_manifests(root, state):
     write(root/"runtime/manifest.json", rp)
 
 def main():
+    # Accept the documented command-first form as well as the historical
+    # STATE COMMAND form used by existing SDD workspaces.
+    commands={"init", "status", "transition", "allowed", "verify", "register-task", "gate"}
+    if len(sys.argv) > 2 and sys.argv[1] in commands:
+        sys.argv[1], sys.argv[2] = sys.argv[2], sys.argv[1]
     ap = argparse.ArgumentParser()
     ap.add_argument("state")
     ap.add_argument("action", choices=["init", "status", "transition", "allowed", "verify", "register-task", "gate"])
