@@ -81,14 +81,24 @@ runtime/<run-id>/manifest.json
 
 ## 单一 Harness 脚本
 
-对协调 Agent 暴露一个统一入口即可。内部实现可以拆成函数，但不再要求协调 Agent 直接调用多个状态脚本。
+目标是对协调 Agent 暴露一个统一入口。当前版本仍保留若干独立检查脚本，统一入口尚未完成，以下分开标明当前接口和目标接口。
+
+当前接口：
 
 ```text
-sdd-harness.py init
-sdd-harness.py status
-sdd-harness.py allowed --action <action>
-sdd-harness.py transition --to <state>
-sdd-harness.py verify --artifact <path>
+python sdd-harness.py STATE init|status|transition|allowed [VALUE]
+check-building-gate SDD_WORKSPACE [BUILDING_AUDIT]
+check-fix-loop LEDGER REVIEW_FILE FIX_ROUND
+```
+
+目标接口：
+
+```text
+sdd-harness.py init STATE
+sdd-harness.py status STATE
+sdd-harness.py allowed STATE --action <action>
+sdd-harness.py transition STATE --to <state> --evidence <manifest>
+sdd-harness.py verify STATE --artifact <path>
 ```
 
 ### 自然语言如何转成 Harness 动作
@@ -202,4 +212,4 @@ Harness 只检查状态、证据、身份和合法动作。它不判断算法、
 
 ## 当前实现与后续方向
 
-当前 Harness 已有固定状态转移脚本和 Building/fix loop 检查。后续应把状态、版本引用、Task 证据和 `next_allowed_actions` 合并到统一的 `sdd-harness.py` 入口。只有 Harness 成功返回允许动作，协调 Agent 才能派发下一步。
+当前 Harness 已有固定状态转移脚本和 Building/fix loop 检查。后续应把状态、版本引用、Task 证据和 `next_allowed_actions` 合并到统一的 `sdd-harness.py` 入口，并逐步吸收 `check-building-gate` 和 `check-fix-loop` 的检查。只有 Harness 成功返回允许动作，协调 Agent 才能派发下一步。
