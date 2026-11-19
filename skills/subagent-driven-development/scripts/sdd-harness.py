@@ -171,10 +171,10 @@ def sync_manifests(root, state):
     view={"reader_spec":refs.get("reader_spec"), "reader_spec_sha256":refs.get("reader_spec",{}).get("sha256") if refs.get("reader_spec") else None, "build_plan":refs.get("build_plan"), "build_plan_sha256":refs.get("build_plan",{}).get("sha256") if refs.get("build_plan") else None}
     write(root/"analysis-state.json", {"phase":phase,"status":status,**view,"building_manifest":"building/manifest.json","runtime_manifest":"runtime/manifest.json","next_allowed_actions":list(NEXT.get(status, []))})
     bp=read(root/"building/manifest.json") if (root/"building/manifest.json").exists() else {}
-    bp.update({"phase":"building","status":status if phase in {"building", "building_audit"} else bp.get("status","building_audit_gate"),**view,"runtime_manifest":"runtime/manifest.json","tasks":state.get("tasks",bp.get("tasks",{})),"evidence":state.get("evidence",bp.get("evidence",{})),"user_acceptance":state.get("user_acceptance",bp.get("user_acceptance"))})
+    bp.update({"phase":"building","status":status if phase in {"proposal", "building", "building_audit"} else bp.get("status","building_audit_gate"),**view,"runtime_manifest":"runtime/manifest.json","tasks":state.get("tasks",bp.get("tasks",{})),"evidence":state.get("evidence",bp.get("evidence",{})),"user_acceptance":state.get("user_acceptance",bp.get("user_acceptance"))})
     write(root/"building/manifest.json",bp)
     rp=read(root/"runtime/manifest.json") if (root/"runtime/manifest.json").exists() else {}
-    rp.update({"phase":"runtime","status":status if phase in {"runtime", "runtime_audit", "runtime_finish"} else rp.get("status","blocked"),**view,"building_manifest":"building/manifest.json","evidence":state.get("evidence",rp.get("evidence",{})),"user_acceptance":state.get("user_acceptance",rp.get("user_acceptance"))})
+    rp.update({"phase":"runtime","status":status if phase in {"runtime", "runtime_audit", "runtime_finish"} else "blocked",**view,"building_manifest":"building/manifest.json","evidence":state.get("evidence",rp.get("evidence",{})),"user_acceptance":state.get("user_acceptance",rp.get("user_acceptance"))})
     write(root/"runtime/manifest.json",rp)
     reconcile_manifests(root)
 
@@ -324,7 +324,7 @@ def _main(args, path):
             if set(args.reusable_output) & set(args.invalidated_output): raise SystemExit("extension output cannot be both reusable and invalidated")
         if any(not re.fullmatch(r"T\d+(?:-EXT\d+)?", x) for x in args.affected_task): raise SystemExit("invalid affected-task")
         if extension and any(x != parent and x not in state.get("tasks", {}) for x in args.affected_task): raise SystemExit("extension affected task not registered")
-        state.setdefault("tasks", {})[task_id] = {"status":"building_incomplete", "parent_task_id":parent, "task_kind":"extension" if extension else "base", "task_spec_path":spec["path"], "task_spec_sha256":spec["sha256"], "affected_tasks":args.affected_task, "reusable_outputs":args.reusable_output, "invalidated_outputs":args.invalidated_output, "inheritance_constraints":args.inheritance_constraint, "next_allowed_actions":["dispatch_implementer"]}
+        state.setdefault("tasks", {})[task_id] = {"status":"building_incomplete", "parent_task_id":parent, "task_kind":"extension" if extension else "base", "task_spec_path":spec["path"], "task_spec_sha256":spec["sha256"], "affected_tasks":args.affected_task, "reusable_outputs":args.reusable_output, "invalidated_outputs":args.invalidated_output, "inheritance_constraints":args.inheritance_constraint, "next_allowed_actions":list(NEXT["building_incomplete"])}
         state["task_id"] = task_id
         write(path, state); sync_manifests(path.parent, state); print(task_id); return
     if args.action == "allowed":
