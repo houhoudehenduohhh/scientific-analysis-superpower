@@ -11,13 +11,6 @@ Execute plan by dispatching a fresh implementer subagent per task, a task review
 
 **Core principle:** Fresh subagent per task + task review (spec + quality) + broad final review = high quality, fast iteration
 
-**Hard completion gate:** An implementer report, compile check, or passing
-test never marks Building complete. The controller must not route to Runtime
-or describe Building as complete until the current plan ledger records every
-executed task ID, approved brief snapshot, implementation report, commit
-range, independent Task Review/Re-review, human task report, and whole-branch
-review. Missing evidence means remain in this Skill and continue the SDD loop.
-
 **Narration:** between tool calls, narrate at most one short line — the
 ledger and the tool results carry the record.
 
@@ -299,12 +292,6 @@ Then mark the todo complete and move on. For scientific analysis, a real
 Critical/Important issue still open at the five-round cap pauses the
 dependent task sequence for user decision; it is not marked complete by
 parking it. Non-blocking findings stay visible in the ledger and final report.
-
-Before entering final review, run the SDD completion checklist in the ledger.
-The final response must report the current SDD evidence status, including
-ledger path, task IDs, commit ranges, task review status, whole-branch review
-status, and whether a formal Building Audit exists. If the checklist is
-incomplete, report `Building incomplete` and stop at Building.
 
 ## Final Review
 
