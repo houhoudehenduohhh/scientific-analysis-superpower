@@ -190,15 +190,16 @@ def reconcile_manifests(root):
 def main():
     # Accept the documented command-first form as well as the historical
     # STATE COMMAND form used by existing SDD workspaces.
-    commands={"init", "status", "transition", "allowed", "verify", "register-task", "gate"}
+    commands={"init", "status", "transition", "allowed", "verify", "verify-report", "register-task", "gate"}
     if len(sys.argv) > 2 and sys.argv[1] in commands:
         sys.argv[1], sys.argv[2] = sys.argv[2], sys.argv[1]
     ap = argparse.ArgumentParser()
     ap.add_argument("state")
-    ap.add_argument("action", choices=["init", "status", "transition", "allowed", "verify", "register-task", "gate"])
+    ap.add_argument("action", choices=["init", "status", "transition", "allowed", "verify", "verify-report", "register-task", "gate"])
     ap.add_argument("value", nargs="?")
     ap.add_argument("--evidence", default="")
     ap.add_argument("--artifact", default="")
+    ap.add_argument("--report-kind", choices=["building", "runtime"])
     ap.add_argument("--to")
     ap.add_argument("--action", dest="allowed_action")
     ap.add_argument("--user-accepted", action="store_true")
@@ -270,8 +271,26 @@ def _verify_artifact(state, raw):
     state.setdefault("artifact_verifications", {})[binding["path"]] = {"path":binding["path"], "sha256":actual}
     return state["artifact_verifications"][binding["path"]]
 
+def verify_report_layout(report, kind):
+    required = [
+        "## 1. 审查对象", "## 2. Audit 发现的问题、解决办法及完成状态",
+        "## 3. 有待改进或商讨的地方", "## 4. 未作判断的部分",
+        "## 5. 已核实的下一步修复方向", "## 6. 任务验收索引"
+    ]
+    text = Path(report).read_text(encoding="utf-8")
+    missing = [h for h in required if h not in text]
+    forbidden = [h for h in ("## Strengths", "## Issues", "## Recommendations", "## Human Disposition") if h in text]
+    if missing or forbidden:
+        raise SystemExit(json.dumps({"missing": missing, "forbidden": forbidden}, ensure_ascii=False))
+    return {"report": str(Path(report).resolve()), "kind": kind, "layout": "valid"}
+
 def _main(args, path):
     state = read(path)
+    if args.action == "verify-report":
+        if not args.artifact or not args.report_kind:
+            raise SystemExit("verify-report requires --artifact REPORT --report-kind building|runtime")
+        print(json.dumps(verify_report_layout(args.artifact, args.report_kind), ensure_ascii=False))
+        return
     validate_evidence(state)
     current = state["status"]
     root=path.parent
