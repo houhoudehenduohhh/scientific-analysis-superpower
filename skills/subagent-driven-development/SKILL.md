@@ -9,6 +9,10 @@ The root router must keep the workflow in SDD until its Building gate passes.
 Run `scripts/check-building-gate` before reporting Building complete. If the
 repository lacks Git, run `scripts/ensure-git` first and record its baseline.
 
+Run `scripts/check-fix-loop` after every Task Review that reports
+`CHANGES_REQUIRED` or Critical/Important findings. Until it passes, keep the
+current task active and do not report completion or dispatch the next task.
+
 Execute plan by dispatching a fresh implementer subagent per task, a task review (spec compliance + code quality) after each, and a broad whole-branch review at the end. For scientific analysis, read [Building boundaries](../../references/build-stage.md) first; the final review produces a Building Audit report and stops for user decision.
 
 **Why subagents:** You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. They should never inherit your session's context or history — you construct exactly what they need. This also preserves your own context for coordination work.

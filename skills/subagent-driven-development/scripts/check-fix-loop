@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ledger=${1:?usage: check-fix-loop LEDGER REVIEW_FILE FIX_ROUND}
+review=${2:?usage: check-fix-loop LEDGER REVIEW_FILE FIX_ROUND}
+round=${3:?usage: check-fix-loop LEDGER REVIEW_FILE FIX_ROUND}
+[ -s "$ledger" ] || { echo "MISSING ledger" >&2; exit 1; }
+[ -s "$review" ] || { echo "MISSING review" >&2; exit 1; }
+if grep -qE 'CHANGES_REQUIRED|Critical|Important' "$review" && [ "$round" -lt 5 ]; then
+  grep -qE "fix round $round/5|fix_round=$round" "$ledger" || { echo "BLOCKED: fix round not recorded" >&2; exit 1; }
+  grep -qE 'fix report|fix_report|covering tests|Re-review|re-review' "$ledger" || { echo "BLOCKED: fix report or re-review evidence missing" >&2; exit 1; }
+  grep -qE 'ADDRESSED|NOT_ADDRESSED' "$ledger" || { echo "BLOCKED: re-review verdict missing" >&2; exit 1; }
+fi
+echo "Fix loop gate passed"

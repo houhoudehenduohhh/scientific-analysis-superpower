@@ -31,7 +31,7 @@ assert no_unreviewed_upstream_output_is_used
 
 ## 运行与记录
 
-若派发 Runtime 执行子 Agent，在创建工具参数中显式传入 `model: gpt-6.2-sol` 和 `reasoning_effort: low`。
+若派发 Runtime 执行子 Agent，在创建工具参数中显式传入 `model: gpt-6.2-sol` 和 `reasoning_effort: medium`。
 
 按批准的 Build Plan **Runtime 步骤图**执行，不把 Build Task 编号当作运行顺序。一个 Build Task 可对应发布、计算、回收等多个步骤；同一验收节点内，已满足前置条件且写入互不冲突的步骤可并行。只运行用户本次授权的节点和步骤；接受上游节点不自动扩大授权。每步完成后按 [自动步骤审查](../templates/runtime-task-reviewer-prompt.md)由未执行该步的 Reviewer 检查，审查通过才解锁其依赖步骤。
 

@@ -226,7 +226,7 @@ builder check.
 unit. The builder check does not create a third formal Proposal document.
 
 **Builder check** (for a project): dispatch a fresh subagent with model
-`gpt-6.2-sol` and reasoning effort `low` as creation arguments. Use
+`gpt-6.2-sol` and reasoning effort `medium` as creation arguments. Use
 `builder-check-prompt.md` in this directory. When you tell your human
 partner you're writing it up, say a reviewer will read it first and you
 may come back once with a few questions. Don't hand over the document
