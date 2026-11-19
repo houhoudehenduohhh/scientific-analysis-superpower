@@ -12,35 +12,56 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# State transitions and exposed actions are kept in one table.
 STATES = {
-    "building_incomplete": {"task_review_pending"},
+    "proposal": {"building_incomplete"}, "building_incomplete": {"task_review_pending"},
     "task_review_pending": {"task_complete", "fix_round_pending"},
     "fix_round_pending": {"re_review_pending", "user_decision_pending"},
     "re_review_pending": {"task_complete", "fix_round_pending", "user_decision_pending"},
     "task_complete": {"task_review_pending", "final_review_pending"},
-    "final_review_pending": {"building_audit_pending"},
-    "building_audit_pending": {"building_audit_gate"},
-    "building_audit_gate": {"runtime_authorized"},
-    "user_decision_pending": set(),
-    "runtime_authorized": {"runtime_step_pending"},
-    "runtime_step_pending": {"runtime_step_review_pending"},
+    "final_review_pending": {"building_audit_pending"}, "building_audit_pending": {"building_audit_gate"},
+    "building_audit_gate": {"runtime_authorized"}, "user_decision_pending": set(),
+    "runtime_authorized": {"runtime_step_pending"}, "runtime_step_pending": {"runtime_step_review_pending"},
     "runtime_step_review_pending": {"runtime_fix_pending", "milestone_audit_pending"},
-    "runtime_fix_pending": {"runtime_step_pending", "user_decision_pending"},
-    "milestone_audit_pending": {"milestone_audit_gate"},
-    "milestone_audit_gate": {"runtime_step_pending", "final_chain_audit_pending"},
-    "final_chain_audit_pending": {"runtime_finish_pending"},
-    "runtime_finish_pending": set(),
+    "runtime_fix_pending": {"runtime_step_pending", "user_decision_pending", "building_incomplete", "proposal"},
+    "milestone_audit_pending": {"milestone_audit_gate"}, "milestone_audit_gate": {"runtime_step_pending", "final_chain_audit_pending"},
+    "final_chain_audit_pending": {"runtime_finish_pending"}, "runtime_finish_pending": set(),
 }
 NEXT = {
- "building_incomplete":["dispatch_implementer"], "task_review_pending":["dispatch_task_reviewer"],
- "fix_round_pending":["dispatch_fix_agent"], "re_review_pending":["dispatch_reviewer"],
+ "proposal":["resume_or_redispatch_proposer"], "building_incomplete":["resume_or_redispatch_implementer"],
+ "task_review_pending":["dispatch_task_reviewer"], "fix_round_pending":["dispatch_fix_agent"], "re_review_pending":["dispatch_reviewer"],
  "task_complete":["dispatch_next_task","dispatch_final_review"], "final_review_pending":["dispatch_final_review"],
  "building_audit_pending":["create_building_audit"], "building_audit_gate":["wait_for_user_decision"],
  "runtime_authorized":["execute_runtime_step"], "runtime_step_pending":["execute_runtime_step"],
- "runtime_step_review_pending":["dispatch_runtime_step_reviewer"], "runtime_fix_pending":["retry_runtime_step","return_building","return_proposal"],
+ "runtime_step_review_pending":["dispatch_runtime_step_reviewer"],
+ "runtime_fix_pending":["retry_runtime_step","return_building","return_proposal"],
  "milestone_audit_pending":["dispatch_milestone_audit"], "milestone_audit_gate":["wait_for_user_decision"],
  "final_chain_audit_pending":["dispatch_final_chain_audit"], "runtime_finish_pending":["dispatch_runtime_finish"],
  "user_decision_pending":["wait_for_user_decision"]}
+PHASE_STATUSES = {
+ "proposal":{"proposal"},
+ "building":{"building_incomplete","task_review_pending","fix_round_pending","re_review_pending","task_complete","final_review_pending"},
+ "building_audit":{"building_audit_pending","building_audit_gate"},
+ "runtime":{"runtime_authorized","runtime_step_pending","runtime_step_review_pending","runtime_fix_pending"},
+ "runtime_audit":{"milestone_audit_pending","milestone_audit_gate","final_chain_audit_pending"},
+ "runtime_finish":{"runtime_finish_pending"}}
+ACTION_TARGETS = {
+ "resume_or_redispatch_proposer":{"proposal"}, "resume_or_redispatch_implementer":{"building_incomplete"},
+ "dispatch_task_reviewer":{"task_review_pending"}, "dispatch_fix_agent":{"fix_round_pending"}, "dispatch_reviewer":{"re_review_pending"},
+ "dispatch_next_task":{"task_review_pending"}, "dispatch_final_review":{"final_review_pending"}, "create_building_audit":{"building_audit_pending"},
+ "wait_for_user_decision":{"building_audit_gate","milestone_audit_gate","user_decision_pending"},
+ "execute_runtime_step":{"runtime_step_pending","runtime_authorized"}, "dispatch_runtime_step_reviewer":{"runtime_step_review_pending"},
+ "retry_runtime_step":{"runtime_step_pending"}, "return_building":{"building_incomplete"}, "return_proposal":{"proposal"},
+ "dispatch_milestone_audit":{"milestone_audit_pending"}, "dispatch_final_chain_audit":{"final_chain_audit_pending"}, "dispatch_runtime_finish":{"runtime_finish_pending"}}
+
+def _phase(status):
+    for phase, statuses in PHASE_STATUSES.items():
+        if status in statuses: return phase
+    raise SystemExit("unknown harness status: " + str(status))
+
+for _status, _actions in NEXT.items():
+    for _action in _actions:
+        if _action not in ACTION_TARGETS: raise RuntimeError("action missing mapping: " + _action)
 
 def read(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -145,18 +166,15 @@ def validate_evidence(state):
         if acceptance.get("building_audit_sha256") != expected:
             raise SystemExit("user acceptance fingerprint changed")
 
-def _phase(status):
-    return "runtime" if status in {"runtime_authorized", "runtime_step_pending", "runtime_step_review_pending", "runtime_fix_pending", "milestone_audit_pending", "milestone_audit_gate", "final_chain_audit_pending", "runtime_finish_pending"} else "building"
-
 def sync_manifests(root, state):
     root=Path(root); refs=state.get("refs", {}); status=state.get("status"); phase=_phase(status)
     view={"reader_spec":refs.get("reader_spec"), "reader_spec_sha256":refs.get("reader_spec",{}).get("sha256") if refs.get("reader_spec") else None, "build_plan":refs.get("build_plan"), "build_plan_sha256":refs.get("build_plan",{}).get("sha256") if refs.get("build_plan") else None}
     write(root/"analysis-state.json", {"phase":phase,"status":status,**view,"building_manifest":"building/manifest.json","runtime_manifest":"runtime/manifest.json","next_allowed_actions":list(NEXT.get(status, []))})
     bp=read(root/"building/manifest.json") if (root/"building/manifest.json").exists() else {}
-    bp.update({"phase":"building","status":status if phase=="building" else bp.get("status","building_audit_gate"),**view,"runtime_manifest":"runtime/manifest.json","tasks":state.get("tasks",bp.get("tasks",{})),"evidence":state.get("evidence",bp.get("evidence",{})),"user_acceptance":state.get("user_acceptance",bp.get("user_acceptance"))})
+    bp.update({"phase":"building","status":status if phase in {"building", "building_audit"} else bp.get("status","building_audit_gate"),**view,"runtime_manifest":"runtime/manifest.json","tasks":state.get("tasks",bp.get("tasks",{})),"evidence":state.get("evidence",bp.get("evidence",{})),"user_acceptance":state.get("user_acceptance",bp.get("user_acceptance"))})
     write(root/"building/manifest.json",bp)
     rp=read(root/"runtime/manifest.json") if (root/"runtime/manifest.json").exists() else {}
-    rp.update({"phase":"runtime","status":status if phase=="runtime" else rp.get("status","blocked"),**view,"building_manifest":"building/manifest.json","evidence":state.get("evidence",rp.get("evidence",{})),"user_acceptance":state.get("user_acceptance",rp.get("user_acceptance"))})
+    rp.update({"phase":"runtime","status":status if phase in {"runtime", "runtime_audit", "runtime_finish"} else rp.get("status","blocked"),**view,"building_manifest":"building/manifest.json","evidence":state.get("evidence",rp.get("evidence",{})),"user_acceptance":state.get("user_acceptance",rp.get("user_acceptance"))})
     write(root/"runtime/manifest.json",rp)
     reconcile_manifests(root)
 
@@ -165,8 +183,8 @@ def reconcile_manifests(root):
     for key in ("reader_spec_sha256","build_plan_sha256"):
         if a.get(key)!=b.get(key) or a.get(key)!=r.get(key): raise SystemExit("manifest reference mismatch: "+key)
     if a.get("building_manifest")!="building/manifest.json" or a.get("runtime_manifest")!="runtime/manifest.json": raise SystemExit("manifest link mismatch")
-    if a.get("phase")=="runtime" and r.get("status")!=a.get("status"): raise SystemExit("runtime manifest status mismatch")
-    if a.get("phase")=="building" and b.get("status")!=a.get("status"): raise SystemExit("building manifest status mismatch")
+    if a.get("phase") in {"runtime", "runtime_audit", "runtime_finish"} and r.get("status")!=a.get("status"): raise SystemExit("runtime manifest status mismatch")
+    if a.get("phase") in {"proposal", "building", "building_audit"} and b.get("status")!=a.get("status"): raise SystemExit("building manifest status mismatch")
     if b.get("phase") != "building" or r.get("phase") != "runtime": raise SystemExit("manifest phase mismatch")
 
 def main():
@@ -216,6 +234,42 @@ def main():
     finally:
         lockfile.release()
 
+EVIDENCE_REQUIRED = {
+    "task_complete", "fix_round_pending", "re_review_pending",
+    "building_audit_gate", "milestone_audit_gate", "final_chain_audit_pending",
+    "runtime_finish_pending", "runtime_fix_pending",
+}
+
+def _evidence_text(records):
+    chunks=[]
+    for rec in records:
+        try: chunks.append(Path(rec["path"]).read_text(encoding="utf-8", errors="replace"))
+        except OSError: pass
+    return "\n".join(chunks)
+
+def _artifact_binding(state, raw):
+    candidate=str(Path(raw).resolve())
+    collections=[state.get("artifact_bindings", {}), state.get("artifacts", {})]
+    for collection in collections:
+        items = collection.items() if isinstance(collection, dict) else enumerate(collection or [])
+        for key, item in items:
+            if isinstance(item, str):
+                item={"path":key, "sha256":item}
+            if not isinstance(item, dict): continue
+            declared=item.get("path") or item.get("artifact")
+            if declared and str(Path(declared).resolve()) == candidate:
+                expected=item.get("sha256") or item.get("artifact_sha256")
+                if expected: return {"path":candidate, "sha256":expected}
+    raise SystemExit("artifact binding missing: " + candidate)
+
+def _verify_artifact(state, raw):
+    binding=_artifact_binding(state, raw)
+    actual=digest(binding["path"])
+    if actual != binding["sha256"]:
+        raise SystemExit("artifact fingerprint changed: " + binding["path"])
+    state.setdefault("artifact_verifications", {})[binding["path"]] = {"path":binding["path"], "sha256":actual}
+    return state["artifact_verifications"][binding["path"]]
+
 def _main(args, path):
     state = read(path)
     validate_evidence(state)
@@ -224,7 +278,11 @@ def _main(args, path):
     if args.action == "status":
         print(json.dumps(state, ensure_ascii=False, indent=2)); return
     if args.action == "verify":
-        print(json.dumps(evidence_records(args.artifact or args.evidence), ensure_ascii=False)); return
+        if not args.artifact: raise SystemExit("verify requires --artifact bound artifact")
+        result=_verify_artifact(state, args.artifact)
+        write(path, state)
+        sync_manifests(root, state)
+        print(json.dumps(result, ensure_ascii=False)); return
     if args.action == "gate":
         if current in {"building_incomplete", "task_review_pending", "fix_round_pending", "re_review_pending"}:
             if not state.get("task_id") and not state.get("tasks"):
@@ -277,8 +335,25 @@ def _main(args, path):
         print(json.dumps({"allowed":True,"action":action,"state":current},ensure_ascii=False)); return
     if not (args.to or args.value): raise SystemExit("transition requires --to STATE")
     target = args.to or args.value
+    if args.allowed_action:
+        if args.allowed_action not in NEXT.get(current, []):
+            raise SystemExit("action not allowed: " + args.allowed_action)
+        if target not in ACTION_TARGETS.get(args.allowed_action, set()):
+            raise SystemExit("action does not map to target: " + args.allowed_action)
     if target not in STATES.get(current, set()):
         raise SystemExit(f"blocked transition: {current} -> {target}")
+    if target in EVIDENCE_REQUIRED and not args.evidence:
+        raise SystemExit("transition requires evidence: " + target)
+    if args.evidence and target in EVIDENCE_REQUIRED:
+        candidate_records=evidence_records(args.evidence)
+        if target == "fix_round_pending" and "CHANGES_REQUIRED" not in _evidence_text(candidate_records):
+            raise SystemExit("fix round requires CHANGES_REQUIRED evidence")
+        if target == "task_complete" and "CHANGES_REQUIRED" in _evidence_text(candidate_records):
+            raise SystemExit("task_complete requires resolved review evidence")
+    if target == "task_complete":
+        task=state.get("tasks", {}).get(state.get("task_id"), {})
+        if task.get("review_status") == "CHANGES_REQUIRED":
+            raise SystemExit("task_complete blocked by CHANGES_REQUIRED review")
     if target == "fix_round_pending":
         if not state.get("task_id"): raise SystemExit("fix round requires current task")
         if int(state.get("fix_round", 0)) >= 5: raise SystemExit("fix round limit reached")
@@ -303,7 +378,7 @@ def _main(args, path):
         state.setdefault("evidence", {})[target] = records
         if target == "building_audit_gate": state["evidence"]["building_audit"] = records
     state["status"] = target
-    state["phase"] = "runtime" if target in {"runtime_authorized","runtime_step_pending","runtime_step_review_pending","runtime_fix_pending","milestone_audit_pending","milestone_audit_gate","final_chain_audit_pending","runtime_finish_pending"} else "building"
+    state["phase"] = _phase(target)
     state["next_allowed_actions"] = NEXT.get(target,[])
     task_id = state.get("task_id")
     if task_id and task_id in state.get("tasks", {}):
