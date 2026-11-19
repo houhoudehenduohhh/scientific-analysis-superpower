@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+workspace=${1:?usage: check-building-gate SDD_WORKSPACE [building-audit-file]}
+audit=${2:-}
+ledger="$workspace/progress.md"
+fail=0
+need() { [ -s "$1" ] || { echo "MISSING $1" >&2; fail=1; }; }
+need "$ledger"
+git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "MISSING git worktree" >&2; fail=1; }
+[ -z "$audit" ] || need "$audit"
+grep -qE 'building_incomplete|BLOCKED|NEEDS_CONTEXT' "$ledger" && { echo "BLOCKED incomplete SDD state" >&2; fail=1; } || true
+grep -qE 'Task .* complete' "$ledger" || { echo "MISSING completed task evidence" >&2; fail=1; }
+[ -z "$audit" ] || grep -qE 'audit_id|Assessment' "$audit" || { echo "INVALID Building Audit binding" >&2; fail=1; }
+[ "$fail" -eq 0 ] || exit 1
+echo "Building gate evidence is present"

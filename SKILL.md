@@ -16,6 +16,10 @@ description: Route one scientific-analysis functional unit through Proposal, Bui
 
 Building 只能通过 SDD 入口完成。任何代码改动、编译检查或单次测试都不能单独标记为“Building 完成”。在路由到 Building Audit 前，必须存在当前计划的 SDD 账本、每个已执行任务的完整 ID、Task brief 快照、实现报告、提交范围、Task Review/Re-review 结论、人工任务报告和整体 Review 证据。缺任一项就停留在 Building，继续调用 SDD。
 
+Building 入口先执行 [Build 门禁检查](references/build-gates.md)。没有可用 Git 工作树时，先调用 [Git 初始化脚本](skills/subagent-driven-development/scripts/ensure-git) 在项目中建立 Git，记录初始提交，再继续 SDD。禁止以无 Git 状态替代审计证据。
+
+状态必须显式记录。实现 Agent 中断、失败或返回非 DONE 时为 `building_incomplete`，禁止 Reviewer 完成判断、Final Review、Building Audit 和 Runtime。Task Reviewer 缺失时任务不能完成，Final Review 缺失时不能生成正式 Building Audit。最终回复必须列出当前状态、账本、任务 ID、提交范围、Task Review、Final Review 和 Building Audit 证据状态。
+
 ## 阶段路由
 
 | 当前证据 | 当前阶段 → 调用模块 | 本阶段产物与停止点 |

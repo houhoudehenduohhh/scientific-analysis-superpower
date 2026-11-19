@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=${1:-.}
+cd "$root"
+if git rev-parse --show-toplevel >/dev/null 2>&1; then
+  git rev-parse HEAD >/dev/null 2>&1 || git commit --allow-empty -m "chore: establish SDD baseline"
+  exit 0
+fi
+git init
+git add -A
+git commit -m "chore: establish SDD baseline"
+printf 'Git baseline created at %s\n' "$(git rev-parse HEAD)"
