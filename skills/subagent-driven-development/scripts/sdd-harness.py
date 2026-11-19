@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Small deterministic state machine for SDD Building gates."""
+"""Deterministic SDD phase harness with three manifest support."""
 import argparse
 import json
+import os
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 STATES = {
@@ -14,7 +17,14 @@ STATES = {
     "building_audit_pending": {"building_audit_gate"},
     "building_audit_gate": {"runtime_authorized"},
     "user_decision_pending": set(),
-    "runtime_authorized": set(),
+    "runtime_authorized": {"runtime_step_pending"},
+    "runtime_step_pending": {"runtime_step_review_pending"},
+    "runtime_step_review_pending": {"runtime_fix_pending", "milestone_audit_pending"},
+    "runtime_fix_pending": {"runtime_step_pending", "user_decision_pending"},
+    "milestone_audit_pending": {"milestone_audit_gate"},
+    "milestone_audit_gate": {"runtime_step_pending", "final_chain_audit_pending"},
+    "final_chain_audit_pending": {"runtime_finish_pending"},
+    "runtime_finish_pending": set(),
 }
 
 def read(path):
@@ -22,7 +32,12 @@ def read(path):
 
 def write(path, value):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Path(path).write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    fd, tmp = tempfile.mkstemp(prefix=Path(path).name + ".", dir=Path(path).parent)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(value, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+        f.flush(); os.fsync(f.fileno())
+    os.replace(tmp, path)
 
 def main():
     ap = argparse.ArgumentParser()
@@ -34,6 +49,11 @@ def main():
     if args.action == "init":
         if path.exists(): raise SystemExit("state already exists")
         write(path, {"phase": "building", "status": "building_incomplete", "task_id": None, "fix_round": 0, "evidence": {}})
+        root = path.parent
+        write(root / "analysis-state.json", {"phase": "building", "status": "building_incomplete", "building_manifest": "building/manifest.json", "runtime_manifest": "runtime/manifest.json", "next_allowed_actions": ["dispatch_implementer"]})
+        write(root / "building" / "manifest.json", {"phase": "building", "status": "building_incomplete", "tasks": {}, "final_review": "pending", "building_audit": "blocked", "evidence": {}})
+        write(root / "runtime" / "manifest.json", {"phase": "runtime", "status": "blocked", "authorized_nodes": [], "steps": {}, "milestone_audit": "blocked", "final_chain_audit": "blocked"})
+        with (root / "events.jsonl").open("a", encoding="utf-8") as f: f.write(json.dumps({"action": "init", "timestamp": datetime.now(timezone.utc).isoformat()}) + "\n")
         return
     state = read(path)
     current = state["status"]
@@ -46,6 +66,7 @@ def main():
     if args.action == "allowed":
         print("allowed"); return
     state["status"] = target
+    state["next_allowed_actions"] = [] if target in {"user_decision_pending", "runtime_finish_pending"} else ["dispatch_next_allowed_action"]
     write(path, state)
     print(f"{current} -> {target}")
 
