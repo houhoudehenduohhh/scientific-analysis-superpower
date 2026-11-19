@@ -42,7 +42,7 @@ def write(path, value):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("state")
-    ap.add_argument("action", choices=["init", "status", "transition", "allowed", "verify", "register-task"])
+    ap.add_argument("action", choices=["init", "status", "transition", "allowed", "verify", "register-task", "gate"])
     ap.add_argument("value", nargs="?")
     ap.add_argument("--evidence", default="")
     ap.add_argument("--user-accepted", action="store_true")
@@ -66,6 +66,13 @@ def main():
         missing = [str(x) for x in paths if not x.is_file()]
         if missing: raise SystemExit("missing evidence: " + ", ".join(missing))
         print("evidence verified"); return
+    if args.action == "gate":
+        if current in {"building_incomplete", "task_review_pending", "fix_round_pending", "re_review_pending"}:
+            if not state.get("task_id") and not state.get("tasks"):
+                raise SystemExit("gate blocked: no current task evidence")
+        if current == "building_audit_gate" and not state.get("evidence", {}).get("building_audit"):
+            raise SystemExit("gate blocked: Building Audit evidence missing")
+        print("gate passed"); return
     if args.action == "register-task":
         if not args.value: raise SystemExit("register-task requires TASK_ID")
         task_id = args.value
