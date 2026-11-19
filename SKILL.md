@@ -14,6 +14,8 @@ description: Route one scientific-analysis functional unit through Proposal, Bui
 3. 先检查最早未通过的门禁，再按下表选择**唯一当前阶段**。若记录冲突或缺失，停在该门禁补证据；用户说“继续”“运行”，或在一条消息里同时要求计划和执行，都不能代替门禁批准。
 4. 完成当前阶段后，报告本阶段产物、版本、门禁状态和**建议下一步调用的模块**。到达用户门禁时必须停止，不能在同一轮自行批准并越级。
 
+Building 只能通过 SDD 入口完成。任何代码改动、编译检查或单次测试都不能单独标记为“Building 完成”。在路由到 Building Audit 前，必须存在当前计划的 SDD 账本、每个已执行任务的完整 ID、Task brief 快照、实现报告、提交范围、Task Review/Re-review 结论、人工任务报告和整体 Review 证据。缺任一项就停留在 Building，继续调用 SDD。
+
 ## 阶段路由
 
 | 当前证据 | 当前阶段 → 调用模块 | 本阶段产物与停止点 |

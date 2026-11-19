@@ -22,3 +22,4 @@
 
 - 每个任务由独立 Reviewer 对契约符合性和代码质量作双重结论，Agent 在已批准计划内自动完成任务级修复及局部复审，不设置逐任务人工门禁。每任务最多五轮；仍有实质缺陷时暂停依赖任务，带完整证据交用户决定。非阻断问题如实列入最终报告，由用户决定是否接受。
 - 全部任务结束后，按 [最终 Review 规则](../skills/subagent-driven-development/references/final-review.md)由一名独立 Reviewer 审查完整分支；可修复的实现缺陷最多集中修复一次并局部复审。初审与复审先存 SDD 临时工作区；循环结束后才形成一份 [正式 Building Audit 报告](../templates/building-audit-report.md)，关联当前 Spec、Plan、代码提交、任务审查和验证证据。正式报告生成即停止，用户接受前不得进入 Runtime。
+- Building 完成断言：当前计划的账本、每个已执行任务的完整 ID 和获批 Task MD 快照、实现报告、提交差异、Task Review/Re-review、人工任务报告及整体 Review 都存在且相互绑定。只有正式 Building Audit 生成后，才可报告“Building 完成”；编译通过、单次 pytest 或实现者自述不能满足该断言。

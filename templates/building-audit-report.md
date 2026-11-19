@@ -4,6 +4,8 @@
 
 ## Review Context · 审查对象
 
+- SDD 完成证据清单：账本、Task IDs、brief 快照、实现报告、提交范围、Task Review/Re-review、人工任务报告、整体 Review：
+
 - 功能单元及实现摘要：
 - Reader Spec 路径、SHA-256、批准状态：
 - Build Plan 路径、SHA-256、批准状态：
