@@ -30,6 +30,10 @@ head=$3
 
 # Invoke via bash rather than direct exec: some extractors (Python zipfile)
 # strip Unix exec bits when unpacking marketplace packages (#2040).
+workspace_args=("$plan")
+if [ $# -eq 4 ]; then workspace_args+=("$4"); fi
+dir=$("${BASH:-bash}" "$here/sdd-workspace" "${workspace_args[@]}")
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 repo=$("${BASH:-bash}" "$here/sdd-repo" --with-commit)
 
 # An uncommitted source change would be absent from BASE..HEAD and invisible
@@ -50,9 +54,15 @@ git -C "$repo" merge-base --is-ancestor "$base" "$head" || { echo "HEAD is not a
 if [ $# -eq 4 ]; then
   out=$4
 else
-  dir=$("${BASH:-bash}" "$here/sdd-workspace" "$plan")
   out="$dir/review-$(git -C "$repo" rev-parse --short "$base")..$(git -C "$repo" rev-parse --short "$head").diff"
+  "${BASH:-bash}" "$here/sdd-workspace" "$plan" "$out" >/dev/null
 fi
+
+# Publish complete output by renaming within the destination directory.
+out_dir=$(dirname -- "$out")
+temp_dir=$(mktemp -d -- "$out_dir/.review-package.XXXXXXXX")
+temp_out="$temp_dir/$(basename -- "$out")"
+trap 'rm -f -- "$temp_out"; rmdir -- "$temp_dir"' EXIT
 
 {
   echo "# Review package: ${base}..${head}"
@@ -65,7 +75,8 @@ fi
   echo
   echo "## Diff"
   git -C "$repo" -c core.quotePath=false diff -U10 "${base}..${head}"
-} > "$out"
+} > "$temp_out"
 
+mv -f -- "$temp_out" "$out_dir"
 commits=$(git -C "$repo" rev-list --count "${base}..${head}")
 echo "wrote ${out}: ${commits} commit(s), $(wc -c < "$out" | tr -d ' ') bytes"

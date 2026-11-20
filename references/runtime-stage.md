@@ -6,10 +6,10 @@
 
 在**每次正式运行前**核对并记录：
 
-1. 当前 `reader_spec.md` 和 `build_plan.md` 及拟执行步骤引用的 Task MD 已获批准，源数据身份、资格与目标输出仍适用；
+1. 当前 `build_plan.md` 及拟执行步骤引用的 Task MD 已获批准，源数据身份、资格与目标输出仍适用；
 2. Building Audit 的结论为 `PASS`，或用户已明确接受 `PASS_WITH_NOTES` 的限制；`audit_user_decision=accepted`、`accepted_audit_id=audit_id`，且用户在看到这份报告后的后续消息明确授权运行；
 3. 待运行的代码提交与该 Building Audit 审查的 `HEAD` 一致；受审代码、依赖或会改变计算语义的配置若已变更，先返回 Building；
-4. 实际输入与 Reader Spec 的批准身份、版本和资格相符；写入目录、命令及预计资源在获批范围内。
+4. 实际输入与 Build Plan 和 Task MD 的批准身份、版本和资格相符；写入目录、命令及预计资源在获批范围内。
 
 任一条件缺失、矛盾或无法核实，停止并报告缺口。不得从“批准 Spec”“继续”或较早的运行许可推断当前版本已获放行。
 
@@ -31,6 +31,8 @@ assert no_unreviewed_upstream_output_is_used
 
 ## 运行与记录
 
+执行前按 [Runtime Harness 命令](sdd-harness.md#runtime-命令)核对当前可执行范围。正式步骤从 `runtime-run` 启动，协调者使用返回的尝试身份派发独立审查，通过 `runtime-review` 登记裁决，并用 `runtime-report` 生成已核对的节点事实汇总。
+
 若派发 Runtime 执行子 Agent，在创建工具参数中显式传入 `model: gpt-6.2-sol` 和 `reasoning_effort: low`。
 
 按批准的 Build Plan **Runtime 步骤图**执行，不把 Build Task 编号当作运行顺序。一个 Build Task 可对应发布、计算、回收等多个步骤；同一验收节点内，已满足前置条件且写入互不冲突的步骤可并行。只运行用户本次授权的节点和步骤；接受上游节点不自动扩大授权。每步完成后按 [自动步骤审查](../templates/runtime-task-reviewer-prompt.md)由未执行该步的 Reviewer 检查，审查通过才解锁其依赖步骤。
@@ -38,7 +40,7 @@ assert no_unreviewed_upstream_output_is_used
 旧版已批准 Build Plan 若没有步骤图和验收节点，先在 Proposal 补齐并让用户批准受影响的计划；不得由 Agent 事后自定审计节点或把“运行至 Task N”直接解释成最终完成。
 
 - 执行前固定本轮 `run_id`，核对输入版本、代码提交、配置、依赖/环境、随机种子（适用时）、命令和输出位置。大文件可使用已有稳定版本号或强校验和；仅用文件名、修改时间或行数时须声明指纹较弱。
-- 使用批准的入口执行。运行日志写 `scripts/logs/`；配置与指纹写 `scripts/config/`；正式表格和图件分别写 `results/data/`、`results/plot/`。PID、进度与恢复状态共用 `scripts/logs/runtime/`，不作为科研结果。
+- 使用批准的入口执行。运行日志、进程状态和恢复记录写 `scripts/logs/runtime/`，输入配置从 `scripts/config/` 或已批准路径读取。步骤产物先写 `.tmp/sdd/<plan-id>/runtime/<run_id>/attempts/<step_id>/rNN/`。同节点的下游步骤读取已通过步骤审查的暂存文件，跨节点步骤读取已接受节点的发布文件。
 - 每次尝试记录开始/结束、退出码、失败与重试、实际资源和产物状态。只有获批准的运行参数范围内的环境、调度、缓存或可恢复故障可在 Runtime 内重试；不得在运行中静默改代码、换源数据或改统计口径。
 - 逐项核对预期输出是否存在、是否完整以及适用的 schema、样本量、分母、缺失、数值边界和收敛/优化状态。检查结果是运行事实与异常线索，不代替独立审计。性能明显不满足获批规模时记录计时与资源证据，交后续分类；需要改代码则返回 Building。
 - 为本次运行保存可追溯的清单：`run_id`、Building `audit_id`、Spec/Plan 指纹、按完整 ID 绑定的 Task MD 指纹、代码提交、输入身份与指纹、配置指纹、完整命令、环境、输出路径和每项结果的大小/摘要或其他明确的身份依据。对清单的稳定序列化内容计算 SHA-256 作为 `run_hash`；说明采用的序列化和摘要方法，避免把路径或时间戳伪称为内容校验。不同运行或变更后的产物不得共用同一 `run_hash`。
@@ -52,9 +54,13 @@ assert no_unreviewed_upstream_output_is_used
 - 路由须同时核对拟修改对象与实际改动：只改获准运行条件留在 Runtime；源码、依赖或计算语义改变返回 Building，补回归测试及任务复审，新提交重新经过 Building Audit 和用户门禁；源数据资格、目标量或科学算法改变返回 Proposal 并重批 Spec/Plan。根因不明先作限定诊断；五轮仍有实质问题或无法分类时停止受影响链并交用户裁决，不猜测路由。
 - 依据批准的依赖图列出受影响输出及下游。新尝试只使被改动影响的审计与产物失效；未受影响的上游可在身份和接口复核后复用。不得把旧运行产物静默接到新代码、输入或配置。
 
+需要回到 Building 时，通过 `runtime-return` 记录用户裁决。Harness 归档前一周期的步骤、审计和 Building 任务证据，并清空本轮修复计数及 Building 门禁。用现有获批规格重新注册任务，生成不同版本的证据与审计，经用户的新接受与运行授权后再执行。
+
+需要回到 Proposal 时，先登记 `runtime-return` 以保存旧规格快照和两阶段证据，再修订规范路径下的 Build Plan 与 Task MD。用户批准修订版后，用 [Harness 的 `proposal-rebind`](sdd-harness.md#runtime-命令) 绑定新规格并开始新 Building 周期。新审计与运行授权绑定新的合同和 `run_id`。
+
 ## 阶段产物与停止
 
-按 [Runtime Report 模板](../templates/runtime-report.md)在 `audits/runtime/report/` 下保存步骤尝试及节点汇总的事实记录，例如 `runtime_<node>_<step>_rNN_<step_run_hash前12位>.md` 和 `runtime_<node>_<run_hash前12位>.md`；多次运行保留各自的记录，不以新记录覆盖仍需追溯的旧运行。它是供后续独立审计的执行证据，不是 Runtime Audit；包含成功、失败或部分完成的事实、全部尝试和结果清单，不写“已通过 Runtime Audit”。一次性探查脚本、预览表和临时 JSON/CSV 用毕删除；被审计引用的异常证据先转入该记录或结果记录。`reports/` 仅在 Runtime Finish 生成面向结果验收的交付说明。
+采用当前路径约定的 Build Plan，其运行工作区为 `.tmp/sdd/<plan-id>/runtime/<run_id>/`。Harness 根据 [Runtime Report 模板](../templates/runtime-report.md)在其中的 `reports/` 记录每次尝试和节点事实，`reviews/` 保存独立步骤审查及技术初审，`evidence/` 保存合同、授权、审计裁决和发布绑定，`attempts/` 保留每次尝试的文件。早期已绑定运行继续使用原路径。`audits/runtime/` 根目录存放正式 Runtime Audit Markdown。功能单元根目录的 `reports/` 在 Runtime Finish 保存面向读者的交付说明。
 
 当前获准验收节点的步骤完成后停止并进入[节点 Runtime Audit](runtime-audit.md)；未完成时保留事实和返工记录，按上方自动循环或返回阶段处理。正式节点审计一经生成即停在用户门禁，不得自行批准后续节点。所有节点接受后再进行独立的全链条结果审计；未获接受前不得 Runtime Finish。
 

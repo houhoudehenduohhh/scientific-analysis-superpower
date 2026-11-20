@@ -8,6 +8,9 @@ new breakage. It is not a fresh review — the full review already happened.
 that the fix itself broke nothing.
 
 Pass the model and reasoning effort below as subagent creation arguments.
+For an overall fix wave, use the same reviewer role and creation arguments in
+whole-branch mode. Provide the Build Plan, initial Overall Review, scoped fix
+package and full current HEAD in place of the single-task brief and task scope.
 
 ```
 Subagent (general-purpose):
@@ -15,9 +18,10 @@ Subagent (general-purpose):
   model: "gpt-6.2-sol"
   reasoning_effort: "low"
   prompt: |
-    You are re-reviewing one task's fix round. A previous review produced
-    findings; an implementer has attempted to fix them. Your job is to
-    verdict each finding and inspect the fix diff — nothing else.
+    Scope: [Task fix round / whole-branch fix wave]. The Task fix round is
+    the default. In whole-branch mode, read the Build Plan and original
+    Overall Review where the template refers to the Task brief and findings.
+    In either mode, verify each prior finding and inspect the scoped fix diff.
 
     ## The Task
 
@@ -29,7 +33,8 @@ Subagent (general-purpose):
 
     ## The Fix
 
-    Read the implementer's report (fix reports are appended at the end):
+    Read the immutable implementer report and the separate round-specific fix
+    report:
     [REPORT_FILE]
 
     **Fix base:** [FIX_BASE_SHA] (the head the previous review saw)
@@ -66,8 +71,9 @@ Subagent (general-purpose):
 
     ## Tests
 
-    The implementer re-ran the tests covering the amended code and appended
-    the results to the report file. Treat the report as unverified claims:
+    The implementer re-ran the tests covering the amended code and recorded
+    the results in the separate immutable fix report. Treat the report as
+    unverified claims:
     confirm the fix report names the covering tests and shows their output,
     and verify the claims against the diff. Do not re-run the suite to
     confirm their report. Run a test only when reading the code raises a
@@ -76,38 +82,36 @@ Subagent (general-purpose):
 
     ## Output Format
 
-    Write the full report to [RE_REVIEW_FILE], beginning with the first
-    finding's verdict. Return only the round verdict, open findings, and
-    the report path in your final message.
+    In whole-branch mode, start [RE_REVIEW_FILE] with `# Overall Review`,
+    then write `HEAD: [HEAD_SHA]` with the full current commit, and either
+    `Verdict: PASS` or `Verdict: CHANGES_REQUIRED`, each on its own line.
+    Record finding dispositions and any new breakage within the fix scope.
+    This is the current technical review evidence for Building Audit. Omit
+    formal audit-gate fields, including an audit ID or user decision.
 
-    ### Finding Verdicts
+    In Task fix-round mode for scientific-analysis, write [RE_REVIEW_FILE] with the exact six
+    headings from `templates/building-audit-report.md`, in that order. Put
+    each ADDRESSED/NOT ADDRESSED verdict, new breakage, out-of-scope note,
+    proposed resolution, and evidence in the applicable section. Do not use
+    the generic Finding Verdicts/New Breakage/Out-of-Scope/Assessment schema
+    as top-level headings. End with the template's audit-gate fields and keep
+    user acceptance pending. Return only the round verdict, open findings,
+    and report path in the final message. Include an exact machine-readable
+    line `Verdict: PASS` or `Verdict: CHANGES_REQUIRED`. Keep this report
+    immutable and create a new file for every later round.
 
-    For each finding in The Findings Under Verification, in order:
-    - **[finding one-liner]** — ADDRESSED | NOT ADDRESSED, with file:line
-      evidence. "Attempted" is not addressed: the specific defect must no
-      longer exist.
-
-    ### New Breakage in the Fix Diff
-
-    Anything the fix itself broke or introduced, with severity
-    (Critical/Important/Minor) and file:line. "None" if clean.
-
-    ### Out-of-Scope Observations
-
-    Issues you noticed entirely outside the fix diff. Non-blocking; the
-    controller ledgers these for the final review. "None" if none.
-
-    ### Verdict
-
-    **Fix round:** [All findings addressed, no new Critical/Important
-    breakage | Findings remain open] — list the open ones.
+    Within the six sections, identify each prior finding as ADDRESSED or NOT
+    ADDRESSED with file:line evidence, record any new breakage and any
+    out-of-scope observation, and state the fix-round verdict. "Attempted" is
+    not addressed: the defect must no longer exist.
 ```
 
 **Placeholders:**
 - `[BRIEF_FILE]` — the task brief file (same file the implementer worked from)
 - `[FINDINGS]` — the Critical/Important findings and spec gaps from the
   previous review, copied verbatim, one per bullet
-- `[REPORT_FILE]` — the implementer's report file (fix reports appended)
+- `[REPORT_FILE]` — the immutable implementer's report file
+- `[FIX_REPORT_FILE]` — the immutable report for this fix round
 - `[FIX_BASE_SHA]` — the head the previous review saw
 - `[HEAD_SHA]` — current commit
 - `[DIFF_FILE]` — the path `bash scripts/review-package PLAN_FILE FIX_BASE HEAD` printed

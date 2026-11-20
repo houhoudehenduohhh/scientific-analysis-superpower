@@ -8,7 +8,7 @@
 
 ```mermaid
 flowchart TD
-    P[Proposal<br/>澄清问题、源数据与概念算法] --> SG{Spec Gate<br/>用户批准 Reader Spec 与 Build Plan?}
+    P[Proposal<br/>讨论目标、源数据与算法] --> SG{Spec Gate<br/>用户批准 Build Plan 与 Task MD?}
     SG -- 修改方案 --> P
     SG -- 批准 --> B[Building / SDD<br/>逐任务 TDD、实现、审查与复审]
     B --> BA[Building Audit<br/>独立审查完整分支]
@@ -32,10 +32,10 @@ flowchart TD
 
 | 阶段 | 主要工作 | 主要产物与停止点 |
 |---|---|---|
-| **Proposal** | 用 brainstorming 明确研究目标、合格源数据、概念算法和结论边界；用 writing-plans 拆出实施任务，并规划无环的 Runtime 步骤图及阶段性验收节点。 | `specs/reader_spec.md` 与 `specs/build_plan.md`。连同本轮独立 Task MD 提交。停在 **Spec Gate**，等待用户批准当前版本。 |
+| **Proposal** | 讨论研究目标、源数据、边界和算法方向，生成 Build Plan、Task MD 及无环 Runtime 步骤图。 | `specs/build_plan.md` 与 `specs/tasks/` 下的本轮 Task MD。停在 **Spec Gate**，等待用户批准当前版本。 |
 | **Building / SDD** | 在隔离的 Git 工作区按计划逐任务执行 TDD、实现、提交、独立 Task Review 和必要的修复复审。 | 代码、测试、临时技术账本及每任务一份人工验收报告；完成后进行完整分支审查。 |
 | **Building Audit** | 一名独立 Reviewer 追溯 Spec、Plan、代码、测试及任务审查，形成正式报告。 | `audits/building/` 下的报告绑定当前提交，汇总并链接各任务人工报告；停在 **Building Audit Gate**。 |
-| **Runtime** | 按获准的步骤图执行；每步自动独立审查，运行条件问题最多五轮修复复审。 | `results/`、日志及 `audits/runtime/report/` 中的逐步事实记录；通过的步骤才解锁下游。 |
+| **Runtime** | 按获准的步骤图执行；每步自动独立审查，运行条件问题最多五轮修复复审。 | 正式结果、运行日志及 SDD 工作区的逐步事实记录。只有经独立审查的步骤才能解锁同节点依赖。 |
 | **Runtime Audit** | 每个验收节点独立整体审查并等用户接受；全部节点接受后另作最终全链条审计。 | `audits/runtime/` 的节点报告绑定各自 `run_hash`，最终报告绑定 `chain_hash`；两类正式报告均停在用户门禁。 |
 | **Runtime Finish** | 整理已获接受的结果、复现信息、解释边界和限制。 | `reports/` 下的最终交付说明；不新增计算。 |
 
@@ -47,7 +47,7 @@ Build Plan 索引独立 Task MD，并记录任务边界与运行依赖。补充�
 2. 从 Build Plan 提取 **Task N brief**，派独立实现 Agent。按 TDD 先用有独立依据的预期写失败测试，再做最小实现、重构、自查和 Git 提交。
 3. 用任务开始时的 `BASE` 到当前 `HEAD` 生成完整 diff 包。独立 Task Reviewer 分别判断任务契约符合性与代码质量。
 4. 有问题时由实现者修复并提交；Re-review 核对原发现和修复差异。最多五轮，仍有实质问题则停下交用户裁决。任务审查通过后，按批准的 AC 生成一份人工验收报告。
-5. 所有任务完成后，先对**整个分支**做独立初审；可修复的实现缺陷最多集中修复一次并局部复审。更新受修复影响的人工报告后，生成带任务验收索引的正式 Building Audit；用户接受报告前不进入正式运行。
+5. 所有任务完成后，先对**整个分支**做独立初审；可修复的实现缺陷最多集中修复一次并局部复审。核对受修复影响的验收证据后，生成带任务验收索引的正式 Building Audit；用户接受报告前不进入正式运行。
 
 `pytest` 验证具体行为，语法／导入检查验证代码可加载，小规模真实样本 smoke test 验证入口和实际数据接口；它们都不能单独证明正式科研结果可信。任务审查关注局部实现，Building Audit 关注跨任务与科学方案的一致性，Runtime Audit 则关注**实际运行结果**。
 
@@ -57,7 +57,7 @@ Build Plan 索引独立 Task MD，并记录任务边界与运行依赖。补充�
 |---|---|---|
 | Task Review | 当前 Task brief、实现报告、适用科学约束与从任务开始的 `BASE..HEAD` 完整 diff | 本任务是否满足批准的 AC，代码和测试是否可靠。若有具体跨模块风险，可定向读取未修改代码；无法从 diff 证实的内容须标明。 |
 | 修复 Re-review | 原 finding、修复报告及本轮修复差异 | 原问题是否真正解决，修复是否引入新问题。 |
-| 整体 Building Review | 整个开发分支的差异、Reader Spec、Build Plan、各任务报告及验证证据 | 跨任务接口、科学口径和完整实现链是否一致。它不逐行重审仓库里无关的旧代码。 |
+| 整体 Building Review | 整个开发分支的差异、Build Plan、Task MD、各任务报告及验证证据 | 跨任务接口、科学口径和完整实现链是否一致。它不逐行重审仓库里无关的旧代码。 |
 
 Task Review 聚焦变更以控制注意力负担；整体审查补查跨任务关系。`diff` 没有发现问题不等于未修改依赖和正式运行都已验证。
 
@@ -71,13 +71,13 @@ Build Plan 分别列出 **Build Task** 和 **Runtime 步骤**。前者按可独�
 
 返工先记录证据、批准依据、拟修改对象及受影响下游：获准的环境、传输或恢复问题留在 Runtime；修改已审代码返回 Building 并重过其审计门禁；改变源数据资格或科学方法返回 Proposal。根因不明或五轮后仍有实质问题时，停止受影响的依赖链。修复只使受影响产物及其下游审计失效，未受影响的上游结果可在核对身份后复用。
 
-运行尝试和节点的事实记录保存在 `audits/runtime/report/`，自动步骤审查记录保存在 `audits/runtime/task-review/`，正式节点与最终审计保存在 `audits/runtime/`；`reports/` 只用于 Runtime Finish 后面向研究者的结果交付。
+运行尝试、节点事实记录和步骤审查保存在 `.tmp/sdd/`。正式节点与最终审计分别保存在 `audits/runtime/`，即使计划只有一个节点，也各有一个报告及接受门禁。已接受成果发布到 `results/`，`reports/` 仅保存 Runtime Finish 的阶段性结果与结果局限。
 
 ## 返工如何定位
 
 | 核实后的原因 | 返回阶段 |
 |---|---|
-| 源数据资格、研究目标、概念算法、统计方法或结论边界需要改变 | **Proposal**：修订 Reader Spec 和受影响的 Build Plan，重新获得批准。 |
+| 源数据资格、研究目标、概念算法、统计方法或结论边界需要改变 | **Proposal**：修订 Build Plan 和受影响的 Task MD，重新获得批准。 |
 | 代码实现、接口、性能或恢复逻辑需要修改 | **Building**：补测试、修复并提交，重新进行受影响审查和 Building Audit。 |
 | 环境、获准配置、缓存或可恢复运行故障，且方案与代码仍适用 | **Runtime**：修正运行条件后重跑，生成新的 `run_hash` 并重新审计。 |
 
@@ -91,7 +91,7 @@ Build Plan 的开发任务与 Runtime 步骤分别编号；步骤图及节点图
 
 首次调用示例：
 
-> 使用 `$scientific-analysis-superpower` 为这个功能单元制定方案。数据位于……，目标是……；先核对源数据资格，生成 Reader Spec 和 Build Plan，停在 Spec Gate 等我审阅。
+> 使用 `$scientific-analysis-superpower` 为这个功能单元制定方案。数据位于……，目标是……；讨论并生成 Build Plan 和 Task MD，停在 Spec Gate 等我审阅。
 
 已有 Spec、审计或运行记录时，可直接给出功能单元路径并说明“继续”。调度器会检查**当前版本**的门禁状态；“继续”本身不替代批准。正式文档默认中文。
 
@@ -99,7 +99,7 @@ Build Plan 的开发任务与 Runtime 步骤分别编号；步骤图及节点图
 
 ```text
 <功能单元>/
-├─ specs/                 # Reader Spec、Build Plan（Markdown）
+├─ specs/                 # Build Plan、Task MD（Markdown）
 ├─ scripts/
 │  ├─ build/             # 实现脚本
 │  ├─ config/            # 配置与指纹
@@ -107,7 +107,7 @@ Build Plan 的开发任务与 Runtime 步骤分别编号；步骤图及节点图
 │  ├─ smoke_test/        # 小样本冒烟测试
 │  └─ logs/              # 运行日志与运行状态
 ├─ results/               # data/、plot/、smoke_test/
-├─ audits/                # building/report/ 人工任务报告、runtime/report/ 运行事实记录及两阶段审计报告
+├─ audits/                # Building 和 Runtime 正式审计
 ├─ reports/               # Runtime Finish 后的结果交付说明（Markdown）
 └─ .tmp/sdd/              # 每份 Build Plan 的临时账本、brief、review 与 diff 包
 ```
@@ -115,8 +115,8 @@ Build Plan 的开发任务与 Runtime 步骤分别编号；步骤图及节点图
 ## 文件入口
 
 - [SKILL.md](SKILL.md)：阶段路由、门禁及总规则。
-- [Proposal 规则](references/spec-stage.md)、[Reader Spec 模板](templates/reader-spec.md)、[Build Plan 模板](templates/build-plan.md)：科学方案和可执行任务计划。
-- [Building 边界](references/build-stage.md)、[SDD 模块](skills/subagent-driven-development/SKILL.md)、[TDD 模块](skills/test-driven-development/SKILL.md)、[人工任务报告模板](templates/task-human-report.md)：逐任务开发、审查与人工验收证据。
+- [Proposal 规则](references/proposal-stage.md)、[Build Plan 模板](templates/build-plan.md)、[Task Spec 模板](templates/task-spec.md)：可执行任务计划。
+- [Building 边界](references/build-stage.md)、[SDD 模块](skills/subagent-driven-development/SKILL.md)、[Building Auditor 提示词](templates/building-auditor-prompt.md)、[Building Audit 模板](templates/building-audit-report.md)。逐任务开发证据供 Agent 恢复，正式审计的任务验收索引供人工验收。
 - [Building Audit 模板](templates/building-audit-report.md)：完整分支审计及用户逐项裁决。
 - [Runtime 规则](references/runtime-stage.md)、[自动步骤审查提示词](templates/runtime-task-reviewer-prompt.md)、[Runtime Audit 规则](references/runtime-audit.md)、[Runtime Finish 规则](references/runtime-finish.md)：分批运行、逐步审查、节点与最终审计及交付。
 - `docs/`：设计讨论和人工阅读材料，不是 Agent 的执行入口。
@@ -127,4 +127,4 @@ Build Plan 的开发任务与 Runtime 步骤分别编号；步骤图及节点图
 
 ## 来源与许可
 
-SDD、TDD、brainstorming、writing-plans 等模块基于 [obra/superpowers](https://github.com/obra/superpowers) 改造；本项目增加了科研 Spec、源数据资格、Building/Runtime 门禁和结果审计。仓库目前有两份许可文件：根目录的 [LICENSE](LICENSE) 是署名 `houhoudehenduohhh` 的 MIT 文本；[LICENSE-superpowers](LICENSE-superpowers) 保留原项目作者 Jesse Vincent 的 MIT 文本。这是对现有文件的描述，原创部分是否继续采用 MIT 应由权利人决定。
+SDD、TDD、Git 工作区和验证模块参考并改造自 [obra/superpowers](https://github.com/obra/superpowers)；本项目增加了 Build Plan、Task MD、源数据资格、Building/Runtime 门禁和结果审计。仓库目前有两份许可文件：根目录的 [LICENSE](LICENSE) 是署名 `houhoudehenduohhh` 的 MIT 文本；[LICENSE-superpowers](LICENSE-superpowers) 保留原项目作者 Jesse Vincent 的 MIT 文本。这是对现有文件的描述，原创部分是否继续采用 MIT 应由权利人决定。

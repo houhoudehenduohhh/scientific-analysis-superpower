@@ -6,10 +6,30 @@ description: Use when executing implementation plans with independent tasks in t
 # Subagent-Driven Development
 
 The root router must keep the workflow in SDD until its Building gate passes.
-Run `scripts/check-building-gate` before reporting Building complete. If the
-repository lacks Git, run `scripts/ensure-git` first and record its baseline.
+Run the Building entry in [Building boundaries](../../references/build-stage.md#前置与工作区)
+against the unit root approved in the Build Plan. Register the Building gate before reporting completion.
+
+Run `scripts/check-fix-loop` after every Task Review that reports
+`CHANGES_REQUIRED` or Critical/Important findings. Until it passes, keep the
+current task active and do not report completion or dispatch the next task.
+
+Initialize and update the plan state with `scripts/sdd-harness.py`. Do not
+advance a task or phase by prose alone. A rejected transition is a hard stop.
+
+Before registering or dispatching any task, run the Harness action
+`verify-task-spec <state.json> --artifact <Task-Spec.md>`. It checks the exact
+layout of `templates/task-spec.md`, including required fields, acceptance-table
+header, and section order. A failed layout check blocks dispatch. It is a
+format gate only and does not replace the task's scientific or engineering
+review.
 
 Execute plan by dispatching a fresh implementer subagent per task, a task review (spec compliance + code quality) after each, and a broad whole-branch review at the end. For scientific analysis, read [Building boundaries](../../references/build-stage.md) first; the final review produces a Building Audit report and stops for user decision.
+
+Every Implementer follows the TDD contract in `implementer-prompt.md` for
+code or behavior changes: RED, GREEN, REFACTOR, focused tests, applicable
+full-suite verification, and recorded evidence. Task Review must treat missing
+RED/GREEN evidence as an incomplete task unless the report records a permitted
+configuration, documentation, or generated-file exception.
 
 **Why subagents:** You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. They should never inherit your session's context or history — you construct exactly what they need. This also preserves your own context for coordination work.
 
@@ -102,6 +122,9 @@ digraph process {
 
 Ensure the work happens in an isolated workspace: use
 [using-git-worktrees](../using-git-worktrees/SKILL.md) to create one or verify the existing one.
+When reading that Skill, use only its workspace-detection, worktree-creation,
+Git-ignore, and clean-baseline instructions. Do not inject its explanatory
+examples or cleanup discussion into Implementer or Reviewer prompts.
 Never start implementation on a main/master branch without your human
 partner's explicit consent.
 
@@ -179,7 +202,7 @@ and fix-round diffs need it.
   (5) the report-file path and report contract. Exact values (numbers,
   magic strings, signatures, test cases) appear only in the brief. Never
   make a subagent read the whole plan file. For scientific analysis,
-  include only the Reader Spec requirements that bind this task.
+  include only the Build Plan and Task MD requirements that bind this task.
 - **Report file:** name the implementer's report file after the brief
   (brief `…/task-N-brief.md` → report `…/task-N-report.md`) and put it in
   the dispatch prompt. The implementer writes the full report there and
@@ -238,7 +261,7 @@ needed.
 - **Reviewer inputs:** the task reviewer gets three paths — the same brief
   file, the report file, and the review package — plus the global
   constraints that bind the task. For scientific analysis, provide only
-  the applicable Reader Spec excerpt and task interface dependencies.
+  the applicable Build Plan and Task MD excerpts and task interface dependencies.
   Provide a unique task-review output path in the same plan workspace;
   the reviewer writes its full report there for recovery and final audit.
 - The global-constraints block you hand the reviewer is its attention
@@ -283,14 +306,11 @@ message as your other bookkeeping:
 
 For indexed plans, append the approved Task MD fingerprint to this line and record it in the ledger before the first dispatch so mid-loop resumption can verify it.
 
-For scientific analysis, after the independent task review/re-review, use
-[the human task report template](../../templates/task-human-report.md) to
-write one Chinese-content Markdown report per task under the functional unit's
-`audits/building/report/`, named `task-<N>-human-report.md`. Keep the implementer's technical `task-N-report.md` and
-review records in the SDD workspace. The human report must trace every
-approved AC to evidence or an explicit unverified status and map each repair
-to its affected AC; it does not create a per-task human approval gate. Link
-it in the ledger so the final reviewer can find it.
+For scientific analysis, keep the implementer's technical `task-N-report.md`
+and independent task review/re-review in the SDD workspace. Record evidence
+and verification limits for every approved AC and identify the ACs affected by
+repairs. The formal Building Audit consolidates this information in its task
+acceptance index for the user.
 
 Then mark the todo complete and move on. For scientific analysis, a real
 Critical/Important issue still open at the five-round cap pauses the

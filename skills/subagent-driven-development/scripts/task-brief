@@ -71,20 +71,28 @@ case "$index_rc" in
     ;;
 esac
 
-if [ $# -eq 3 ]; then
-  out=$3
-else
-  # Invoke via bash rather than direct exec: some extractors (Python zipfile)
-  # strip Unix exec bits when unpacking marketplace packages (#2040).
-  dir=$("${BASH:-bash}" "$here/sdd-workspace" "$plan")
-  out="$dir/task-${n}-brief.md"
+# Use the approved plan workspace even when an explicit output is supplied.
+workspace_args=("$plan")
+if [ $# -eq 3 ]; then workspace_args+=("$3"); fi
+dir=$(SDD_TASK_SPEC="$task_file" SDD_TASK_ID="$n" "${BASH:-bash}" "$here/sdd-workspace" "${workspace_args[@]}")
+out=${3:-"$dir/task-${n}-brief.md"}
+if [ $# -eq 2 ]; then
+  SDD_TASK_SPEC="$task_file" SDD_TASK_ID="$n" "${BASH:-bash}" "$here/sdd-workspace" "$plan" "$out" >/dev/null
 fi
 
+if [ "$plan" -ef "$out" ] || { [ -n "$task_file" ] && [ "$task_file" -ef "$out" ]; }; then
+  echo "task-brief: output must differ from the source" >&2; exit 2
+fi
+
+# Publish complete output by renaming within the destination directory.
+out_dir=$(dirname -- "$out")
+temp_dir=$(mktemp -d -- "$out_dir/.task-brief.XXXXXXXX")
+temp_out="$temp_dir/$(basename -- "$out")"
+trap 'rm -f -- "$temp_out"; rmdir -- "$temp_dir"' EXIT
+
 if [ -n "$task_file" ]; then
-  if [ "$task_file" -ef "$out" ] || [ "$plan" -ef "$out" ]; then
-    echo "task-brief: output must differ from the source" >&2; exit 2
-  fi
-  cat "$task_file" > "$out"
+  cat "$task_file" > "$temp_out"
+  mv -f -- "$temp_out" "$out_dir"
   echo "wrote ${out}: $(wc -l < "$out" | tr -d ' ') lines"
   exit 0
 fi
@@ -155,15 +163,13 @@ TASK_BRIEF_PLAN="$plan" awk -v n="$n" '
       for (i = 1; i <= shaped; i++) print "  " shaped_heading[i] | "cat >&2"
     }
   }
-' "$plan" > "$out" || rc=$?
-if [ "$rc" -ne 0 ]; then
-  if [ -f "$out" ]; then rm -f "$out"; fi
-  exit "$rc"
-fi
+' "$plan" > "$temp_out" || rc=$?
+if [ "$rc" -ne 0 ]; then exit "$rc"; fi
 
-if [ ! -s "$out" ]; then
+if [ ! -s "$temp_out" ]; then
   echo "task ${n} not found in ${plan} (no heading matching 'Task ${n}')" >&2
   exit 3
 fi
 
+mv -f -- "$temp_out" "$out_dir"
 echo "wrote ${out}: $(wc -l < "$out" | tr -d ' ') lines"
