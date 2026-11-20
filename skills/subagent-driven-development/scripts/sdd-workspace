@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Resolve and ensure the working-tree directory SDD uses for one plan's
-# short-lived artifacts: task briefs, implementer reports, review packages,
-# and the progress ledger. Print the plan directory's absolute path.
+# Print the initialized SDD workspace for a plan and worktree. Declared
+# functional-unit plans resolve through the Harness. The shell resolver below
+# preserves workspace discovery for older inline plans.
 #
 # One directory per plan (<functional-unit>/.tmp/sdd/<plan-basename>/) so a follow-up
 # plan in the same working tree can never read or overwrite another plan's
@@ -32,7 +32,7 @@
 # checkout or worktree needs no `cd DIR ;` prefix, a compound that harnesses
 # cannot allowlist because DIR differs on every run (#1799).
 #
-# Usage: sdd-workspace [-C DIR] PLAN_FILE
+# Usage: sdd-workspace [-C DIR] PLAN_FILE [OUTPUT]
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -42,13 +42,30 @@ if [ "${1:-}" = "-C" ]; then
   shift 2
 fi
 
-if [ $# -ne 1 ]; then
-  echo "usage: sdd-workspace [-C DIR] PLAN_FILE" >&2
-  exit 2
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+  echo "usage: sdd-workspace [-C DIR] PLAN_FILE [OUTPUT]" >&2; exit 2
 fi
 
 plan=$1
 [ -f "$plan" ] || { echo "no such plan file: $plan" >&2; exit 2; }
+
+python_exe=${SDD_PYTHON:-python}
+if ! command -v "$python_exe" >/dev/null 2>&1; then python_exe=python3; fi
+native_path() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -am -- "$1"; else printf '%s\n' "$1"; fi
+}
+args=(resolve-workspace "$(native_path "$plan")")
+if [ -n "${SDD_TASK_SPEC:-}" ]; then args+=("$SDD_TASK_ID" --evidence "$(native_path "$SDD_TASK_SPEC")"); fi
+args+=(--worktree "$(native_path "$PWD")")
+if [ $# -eq 2 ]; then args+=(--artifact "$(native_path "$2")"); fi
+if resolved=$(PYTHONIOENCODING=utf-8 "$python_exe" "$(native_path "$here/sdd-harness.py")" "${args[@]}"); then
+  printf '%s\n' "$resolved"
+  exit 0
+else
+  rc=$?
+  # Exit 3 means an archived plan with no unit-root declaration.
+  [ "$rc" -eq 3 ] || exit "$rc"
+fi
 
 slug=$(basename "$plan" .md)
 [ -n "$slug" ] && [ "$slug" != "." ] && [ "$slug" != ".." ] \

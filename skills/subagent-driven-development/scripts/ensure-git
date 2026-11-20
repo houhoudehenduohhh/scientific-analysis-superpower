@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
+# Compatibility wrapper for the approved, baseline-only Building preflight.
+# Usage: ensure-git BUILD_PLAN SPEC_APPROVAL_JSON
 set -euo pipefail
-root=${1:-.}
-cd "$root"
-if git rev-parse --show-toplevel >/dev/null 2>&1; then
-  git rev-parse HEAD >/dev/null 2>&1 || git commit --allow-empty -m "chore: establish SDD baseline"
-  exit 0
+if [ $# -ne 2 ]; then
+  echo "usage: ensure-git BUILD_PLAN SPEC_APPROVAL_JSON" >&2
+  exit 2
 fi
-git init
-git add -A
-git commit -m "chore: establish SDD baseline"
-printf 'Git baseline created at %s\n' "$(git rev-parse HEAD)"
+here=$(cd "$(dirname "$0")" && pwd)
+python_exe=${SDD_PYTHON:-python}
+if ! command -v "$python_exe" >/dev/null 2>&1; then python_exe=python3; fi
+exec "$python_exe" "$here/sdd-harness.py" prepare-git "$1" --evidence "$2"

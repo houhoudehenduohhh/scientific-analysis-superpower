@@ -1,6 +1,6 @@
 # Runtime Report（运行事实记录）
 
-> 保存于 `audits/runtime/report/`，文件名包含节点、步骤或节点汇总及本次哈希。本记录由执行者填写，只记录实际运行及初步异常；不构成 Runtime Audit 或交付许可。失败尝试保留独立记录，不用后续成功覆盖。
+> Harness 写入 `.tmp/sdd/<plan-id>/runtime/<run_id>/reports/`，按节点、步骤及尝试轮次命名。正文与 Manifest 记录运行身份和指纹，每次尝试独立留存。
 
 ## 运行身份
 
@@ -11,7 +11,7 @@
 - `step_run_hash` 或节点 `run_hash`（SHA-256，及计算/序列化方法）：
 - 上游已接受节点的 `runtime_audit_id`、`run_hash`；无则写“无”：
 - 对应 Building `audit_id` 与接受记录：
-- Reader Spec、Build Plan 路径及指纹：
+- Build Plan 路径及指纹：
 - 代码提交、仓库/工作树：
 - 运行日期、执行者、状态：`complete | failed | partial`
 

@@ -27,9 +27,9 @@ Subagent (general-purpose):
     Global constraints from the spec/design that bind this task:
     [GLOBAL_CONSTRAINTS]
 
-    For scientific analysis, receive only the task-relevant Reader Spec
-    excerpts and interface dependencies. Do not read the complete Reader
-    Spec or Build Plan; cross-task scientific consistency is checked in the
+    For scientific analysis, receive only the task-relevant Build Plan and
+    Task MD excerpts and interface dependencies. Do not read unrelated tasks;
+    cross-task consistency is checked in the
     final Building Audit.
 
     ## What the Implementer Claims They Built
@@ -145,9 +145,10 @@ Subagent (general-purpose):
     "yes." A tight report that cites lines gives the controller everything
     it needs.
 
-    Write the full report to [REVIEW_FILE], beginning with the
-    spec-compliance verdict. Return only the two verdicts, blocking
-    findings, and the report path in your final message.
+    Write the full report to [REVIEW_FILE] using the six-section project
+    template. Put the spec-compliance and code-quality verdicts in the
+    applicable sections. Return only the two verdicts, blocking findings, and
+    the report path in your final message.
 
     ## Calibration
 
@@ -167,31 +168,15 @@ Subagent (general-purpose):
 
     ## Output Format
 
-    ### Spec Compliance
-
-    - ✅ Spec compliant | ❌ Issues found: [what's missing/extra/misunderstood,
-      with file:line references]
-    - ⚠️ Cannot verify from diff: [requirements you could not verify from the
-      diff alone, and what the controller should check — report alongside the
-      ✅/❌ verdict for everything you could verify]
-
-    ### Strengths
-    [What's well done? Be specific.]
-
-    ### Issues
-
-    #### Critical (Must Fix)
-    #### Important (Should Fix)
-    #### Minor (Nice to Have)
-
-    For each issue: file:line, what's wrong, why it matters, how to fix
-    (if not obvious).
-
-    ### Assessment
-
-    **Task quality:** [Approved | Needs fixes]
-
-    **Reasoning:** [1-2 sentence technical assessment]
+    For scientific-analysis, write the review file with the exact six headings
+    from `templates/building-audit-report.md`, in that order. Record the task's
+    spec-compliance and code-quality verdicts, findings, proposed resolutions,
+    completion status, and evidence inside those sections. Do not add
+    Strengths, Critical/Important/Minor, Recommendations, or a second status
+    summary. End with the template's audit-gate fields, keeping user acceptance
+    pending. Include an exact machine-readable line `Verdict: PASS` or
+    `Verdict: CHANGES_REQUIRED`. The Harness checks the layout and verdict
+    before the report is evidence. Once written, keep the report immutable.
 ```
 
 **Placeholders:**
@@ -212,5 +197,5 @@ Subagent (general-purpose):
   path it wrote; the package never enters the controller's context)
 - `[REVIEW_FILE]` — the task review report path in this plan's temporary workspace
 
-**Reviewer returns:** Spec Compliance verdict (✅/❌/⚠️), Strengths, Issues
-(Critical/Important/Minor), Task quality verdict
+**Reviewer returns:** the six template sections, both task verdicts, blocking
+findings, and the report path.

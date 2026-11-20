@@ -35,7 +35,7 @@ Subagent (general-purpose):
 
     Once you're clear on requirements:
     1. Implement exactly what the task specifies
-    2. Write tests (following TDD if task says to)
+    2. For code or behavior changes, use the TDD contract below
     3. Verify implementation works
     4. Commit your work
     5. Self-review (see below)
@@ -50,6 +50,18 @@ Subagent (general-purpose):
 
     **While you work:** If you encounter something unexpected or unclear, **ask questions**.
     It's always OK to pause and clarify. Don't guess or make assumptions.
+
+    ## TDD Contract
+
+    For code or behavior changes, follow RED → GREEN → REFACTOR. Write a
+    minimal behavior test for the current AC first and run it. Confirm that it
+    fails because the target behavior is missing, not because of a test error.
+    Write the smallest implementation that makes it pass, then refactor only
+    while the tests remain green. Before committing, run the focused tests and
+    the applicable project-wide suite. Record RED and GREEN commands, output,
+    and any uncovered conditions in the task report. Configuration-only,
+    documentation-only, and generated-file changes may omit TDD with the
+    reason recorded in the report.
 
     While iterating, run the focused test for what you're changing; run the
     full suite once before committing, not after every edit.
@@ -117,7 +129,7 @@ Subagent (general-purpose):
 
     **Testing:**
     - Do tests actually verify behavior (not just mock behavior)?
-    - Did I follow TDD if required?
+    - Did I follow the TDD contract, or record a permitted exception?
     - Are tests comprehensive?
     - Is the test output pristine (no stray warnings or noise)?
 
@@ -126,18 +138,21 @@ Subagent (general-purpose):
     ## After Review Findings
 
     If the task review finds issues, you will be resumed with the findings.
-    Fix them, re-run the tests that cover the amended code, and append a fix
-    report to your report file: what you changed, the covering tests you
-    ran, the command, and the output. Reviewers will not re-run tests for
-    you — your report is the test evidence. Then reply with the same short
-    status contract as your first report.
+    Create a new immutable fix report for the current round, named with the
+    task ID and round number. Do not edit or append to the original task
+    report, review report, or any previously bound evidence. Record what you
+    changed, the covering tests you ran, the command, and the output.
+    Reviewers will not re-run tests for you — the round report is the test
+    evidence. Then reply with the same short status contract as your first
+    report.
 
     ## Report Format
 
     Write your full report to [REPORT_FILE]:
+    - **Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
     - What you implemented (or what you attempted, if blocked)
     - What you tested and test results
-    - **TDD Evidence** (if TDD was required for this task):
+    - **TDD Evidence** (for code or behavior changes):
       - RED: command run, relevant failing output before implementation, and why the failure was expected
       - GREEN: command run and relevant passing output after implementation
     - Files changed

@@ -23,11 +23,9 @@ class HarnessSmokeTests(unittest.TestCase):
     def test_runtime_return_to_proposal_reconciles_all_manifests(self):
         with tempfile.TemporaryDirectory() as raw_root:
             root = Path(raw_root)
-            reader = root / "reader.md"
             plan = root / "plan.md"
-            reader.write_text("reader\n", encoding="utf-8")
             plan.write_text("plan\n", encoding="utf-8")
-            refs = {"reader_spec": _record(reader), "build_plan": _record(plan)}
+            refs = {"build_plan": _record(plan)}
             state = {
                 "phase": "runtime",
                 "status": "runtime_fix_pending",
@@ -39,7 +37,7 @@ class HarnessSmokeTests(unittest.TestCase):
                 "next_allowed_actions": ["retry_runtime_step", "return_building", "return_proposal"],
             }
             _write(root / "state.json", state)
-            common = {"reader_spec": refs["reader_spec"], "build_plan": refs["build_plan"]}
+            common = {"build_plan": refs["build_plan"]}
             _write(root / "analysis-state.json", {"phase": "runtime", "status": "runtime_fix_pending", "building_manifest": "building/manifest.json", "runtime_manifest": "runtime/manifest.json", **common, "next_allowed_actions": state["next_allowed_actions"]})
             _write(root / "building/manifest.json", {"phase": "building", "status": "task_complete", **common, "runtime_manifest": "runtime/manifest.json"})
             _write(root / "runtime/manifest.json", {"phase": "runtime", "status": "runtime_fix_pending", **common, "building_manifest": "building/manifest.json"})
@@ -58,12 +56,11 @@ class HarnessSmokeTests(unittest.TestCase):
     def test_extension_registration_uses_finite_building_action(self):
         with tempfile.TemporaryDirectory() as raw_root:
             root = Path(raw_root)
-            reader = root / "reader.md"
             plan = root / "plan.md"
             task_spec = root / "task.md"
-            for path in (reader, plan, task_spec):
+            for path in (plan, task_spec):
                 path.write_text(path.name + "\n", encoding="utf-8")
-            refs = {"reader_spec": _record(reader), "build_plan": _record(plan)}
+            refs = {"build_plan": _record(plan)}
             state = {
                 "phase": "building",
                 "status": "building_incomplete",
@@ -75,7 +72,7 @@ class HarnessSmokeTests(unittest.TestCase):
                 "next_allowed_actions": ["resume_or_redispatch_implementer"],
             }
             _write(root / "state.json", state)
-            common = {"reader_spec": refs["reader_spec"], "build_plan": refs["build_plan"]}
+            common = {"build_plan": refs["build_plan"]}
             _write(root / "analysis-state.json", {"phase": "building", "status": "building_incomplete", "building_manifest": "building/manifest.json", "runtime_manifest": "runtime/manifest.json", **common, "next_allowed_actions": state["next_allowed_actions"]})
             _write(root / "building/manifest.json", {"phase": "building", "status": "building_incomplete", **common, "runtime_manifest": "runtime/manifest.json"})
             _write(root / "runtime/manifest.json", {"phase": "runtime", "status": "blocked", **common, "building_manifest": "building/manifest.json"})

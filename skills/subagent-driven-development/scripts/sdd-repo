@@ -6,7 +6,7 @@
 #
 # The plan file's location never picks the repository. An executor working
 # in a linked worktree commonly holds an absolute path to the plan in the
-# main checkout (writing-plans leaves the plan uncommitted there), and its
+# main checkout (planning artifacts remain in the functional-unit workspace), and its
 # workspace and commits belong to the worktree it is working in. And a
 # caller standing outside any repository, such as the skill's own directory
 # in an installed plugin, is in the wrong place: guessing a repository from
@@ -18,11 +18,13 @@
 # directory (where 'git init' would be the wrong fix) and a new project
 # that has no repository or commit yet.
 #
-# Single source of truth for which repository the SDD and executing-plans
-# scripts work in, so no two of them can disagree.
+# Low-level Git discovery. Callers with a current Build Plan first use
+# sdd-workspace to verify the approved unit and selected worktree.
 #
 # Usage: sdd-repo [--with-commit]
 set -euo pipefail
+
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 
 with_commit=false
 if [ "${1:-}" = "--with-commit" ]; then

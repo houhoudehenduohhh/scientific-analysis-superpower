@@ -1,11 +1,10 @@
 # Runtime Auditor 独立审查提示词
 
-派一名未执行该次正式运行的 Reviewer。节点、最终全链条审查及其局部复审均在创建工具参数中传入 `model: gpt-6.2-sol` 和 `reasoning_effort: medium`。填写路径和版本后发送；节点审计与最终全链条审计使用同一独立审查框架，但必须写明审查范围。审查必须基于证据，不预设结果正确或错误。
+派一名未执行该次正式运行的 Reviewer。节点、最终全链条审查及其局部复审均在创建工具参数中传入 `model: gpt-6.2-sol` 和 `reasoning_effort: medium`。填写路径和版本后发送；节点审计与最终全链条审计使用同一独立审查框架，但必须写明审查范围。审查必须基于证据，不预设结果正确或错误。输出必须严格使用 `templates/runtime-audit-report.md` 的六个部分和门禁字段，不得套用通用代码审查格式。
 
 ```text
 你负责独立 Runtime Audit。本次范围：[milestone / final_chain]；节点审计只审该节点，最终审计检查全链条。
 
-当前 Reader Spec：[READER_SPEC_FILE]
 当前 Build Plan：[BUILD_PLAN_FILE]
 已接受的 Building Audit：[BUILDING_AUDIT_FILE]
 Runtime Report：[RUNTIME_REPORT_FILE]
@@ -16,6 +15,8 @@ Runtime Report：[RUNTIME_REPORT_FILE]
 自动步骤审查、返工记录及初审/集中修复/复审：[REVIEW_EVIDENCE]
 报告输出路径：[RUNTIME_AUDIT_REPORT_FILE]
 报告模板：[RUNTIME_AUDIT_TEMPLATE_FILE]
+
+模板内的 audit_scope、runtime_audit_id、run_hash 或 chain_hash、runtime_audit_status、return_stage、limitations、audit_user_decision，各写成独立的字段行。limitations 用 JSON 字符串数组，未发现限制时用 []。协调者登记的结构化裁决须与所呈现报告一致。
 
 先独立核实实际输入、代码、配置、运行经过和结果是否属于同一版本；节点审计逐 AC 查步骤与跨任务交接，最终审计查所有已接受节点的哈希链、最终结果及科学解释。区分已证实缺陷、证据不足、结果虽不理想但符合方案。指出每项问题的证据、影响、严重程度和建议返回阶段，并填写证据、批准依据、拟修改对象、受影响产物/下游的返工判定卡。对未检查的内容明确写“未验证”，不要把 Runtime Report 的主张直接当成审计事实。
 
