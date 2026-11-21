@@ -107,10 +107,38 @@ def select_worktree(unit, supplied=None):
     if worktree == unit:
         return unit
     if worktree.is_dir() and standalone_repo(unit) and root_repo(worktree) and common_dir(unit) == common_dir(worktree):
-        records = git(unit, "worktree", "list", "--porcelain", "-z").stdout.split("\0")
-        if any(entry.startswith("worktree ") and Path(entry[9:]).resolve() == worktree for entry in records):
+        if worktree in registered_worktrees(unit):
             return worktree
     raise ValueError(f"worktree does not belong to approved functional-unit Git root {unit}: {worktree}")
+
+
+def registered_worktrees(unit):
+    records = git(unit, "worktree", "list", "--porcelain", "-z").stdout.split("\0")
+    return [Path(entry[9:]).resolve() for entry in records if entry.startswith("worktree ")]
+
+
+def approved_worktree(unit, approval, requested=None):
+    approved = approval.get("worktree_path")
+    if approved is None:
+        if requested is not None and Path(requested).resolve() != unit:
+            raise ValueError("linked worktree requires an approved worktree_path in the Spec receipt")
+        return unit
+    if not isinstance(approved, str) or not approved:
+        raise ValueError("approved worktree_path must be an absolute canonical path")
+    approved = Path(approved)
+    if not approved.is_absolute() or approved != approved.resolve():
+        raise ValueError("approved worktree_path must be an absolute canonical path")
+    if requested is not None and Path(requested).resolve() != approved:
+        raise ValueError("requested worktree differs from approved worktree_path")
+    return select_worktree(unit, approved)
+
+
+def check_other_workspace(unit, worktree, plan):
+    if standalone_repo(unit):
+        for checkout in registered_worktrees(unit):
+            existing = state_path(checkout, plan)
+            if checkout != worktree and (existing.exists() or existing.is_symlink()):
+                raise ValueError(f"this plan already has an SDD state in another worktree; resume {existing}")
 
 
 def prepare(unit, worktree):

@@ -414,8 +414,9 @@ def main():
             if not args.build_plan:
                 raise ValueError("init requires --build-plan")
             unit, plan, approval, receipt = approved_build_plan(args.build_plan, args.evidence)
-            worktree = unit_git.select_worktree(unit, args.worktree)
+            worktree = unit_git.approved_worktree(unit, approval, args.worktree)
             path = unit_git.verify_state_location(path, worktree, plan["path"])
+            unit_git.check_other_workspace(unit, worktree, plan["path"])
             if path.exists():
                 raise ValueError("state already exists")
             binding = unit_git.prepare(unit, worktree)
@@ -738,6 +739,8 @@ def rebind_proposal(args, state, state_path):
         verify_completed_plan(Path(plan["path"]).read_text(encoding="utf-8"), completed, state)
         runtime.Runtime(state, None, verify_report_layout, state_path=state_path).verify_completed_batches()
     if binding:
+        if "worktree_path" in approval:
+            unit_git.approved_worktree(unit, approval, binding["worktree"])
         runtime.require(unit == Path(binding["unit_root"])
                         and plan["path"] == state["refs"]["build_plan"]["path"],
                         "Proposal rebind must keep the initialized functional-unit Git root and Build Plan path")

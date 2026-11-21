@@ -57,13 +57,14 @@ def symlink(path, target):
         pytest.skip(f"cannot create symbolic links: {error}")
 
 
-def plan_and_approval(unit, *, status="approved"):
+def plan_and_approval(unit, *, status="approved", worktree=None):
     plan, task = write_proposal(unit)
     file(plan, plan.read_text(encoding="utf-8").replace("decision: pending", f"decision: {status}"))
     file(task, task.read_text(encoding="utf-8").replace("approval_status: pending", "approval_status: approved"))
     receipt = file(unit / ".tmp/sdd/spec-approval.json", json.dumps({
         "build_plan_sha256": hash_file(plan), "task_specs": {"T01": hash_file(task)},
         "approved_at": datetime.now(timezone.utc).isoformat(), "user_message_ref": "fixture-user-approval",
+        **({"worktree_path": str(worktree)} if worktree else {}),
     }))
     return plan, task, receipt
 
@@ -161,12 +162,11 @@ def test_parent_tracking_blocks_and_reports_files(parent, nested_exists, staged_
 @pytest.mark.parametrize("track_linked_worktree", [False, True])
 def test_later_parent_gitlink_blocks_registered_worktree(parent, track_linked_worktree):
     unit = parent / "unit"
-    plan, task, receipt = plan_and_approval(unit)
-    worktree = unit
+    worktree = parent / "linked" if track_linked_worktree else unit
+    plan, task, receipt = plan_and_approval(unit, worktree=worktree)
     if track_linked_worktree:
         prepared = cli("prepare-git", plan, "--evidence", receipt)
         assert prepared.returncode == 0, prepared.stderr
-        worktree = parent / "linked"
         git(unit, "worktree", "add", "--quiet", "--detach", str(worktree))
     initialized = build(worktree, plan, receipt, "--worktree", worktree)
     assert initialized.returncode == 0, initialized.stderr
@@ -210,18 +210,31 @@ def test_prepare_then_init_in_same_logical_worktree(parent):
     assert prepared.returncode == 0, prepared.stderr
     assert not state_path(unit).parent.exists()
     git(unit, "worktree", "add", "--detach", str(linked))
+    unapproved = build(linked, plan, receipt, "--worktree", linked)
+    assert unapproved.returncode != 0 and "approved worktree_path" in unapproved.stderr
+    assert not state_path(linked).parent.exists()
+
+    approval = json.loads(receipt.read_text(encoding="utf-8"))
+    linked_receipt = file(receipt.with_name("linked-approval.json"),
+                          json.dumps({**approval, "worktree_path": str(linked)}))
     foreign = parent / "other repository"
     foreign.mkdir()
     git(foreign, "init", "--quiet")
-    wrong = build(foreign, plan, receipt, "--worktree", foreign)
+    wrong = build(foreign, plan, linked_receipt, "--worktree", foreign)
     assert wrong.returncode != 0 and "worktree" in wrong.stderr
     assert not state_path(foreign).parent.exists()
-    valid = build(linked, plan, receipt, "--worktree", linked)
+    valid = build(linked, plan, linked_receipt, "--worktree", linked)
     assert valid.returncode == 0, valid.stderr
     state = json.loads(state_path(linked).read_text(encoding="utf-8"))
     assert Path(state["git"]["unit_root"]) == unit.resolve()
     assert Path(state["git"]["worktree"]) == linked.resolve()
     assert not state_path(unit).parent.exists()
+    duplicate = build(unit, plan, receipt)
+    assert duplicate.returncode != 0 and "already has an SDD state" in duplicate.stderr
+    assert not state_path(unit).parent.exists()
+    assert state_path(linked).is_file()
+    assert cli("status", state_path(linked)).returncode == 0
+
 
 
 def test_unborn_unit_keeps_sensitive_files_already_staged_out_of_baseline(parent):
