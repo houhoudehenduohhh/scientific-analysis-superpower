@@ -39,6 +39,7 @@ NEXT = {
  "runtime_fix_pending":["retry_runtime_step","return_building","return_proposal"],
  "milestone_audit_pending":["dispatch_milestone_audit"], "milestone_audit_gate":["wait_for_user_decision"],
  "final_chain_audit_pending":["dispatch_final_chain_audit"], "runtime_finish_pending":["dispatch_runtime_finish"],
+ "batch_complete_pending":["advance_next_batch"],
  "user_decision_pending":["wait_for_user_decision"],
  "runtime_authorization_pending":["record_runtime_authorization"],
  "final_chain_audit_gate":["wait_for_user_decision"],
@@ -48,7 +49,7 @@ PHASE_STATUSES = {
  "building":{"building_incomplete","task_review_pending","fix_round_pending","re_review_pending","task_complete","final_review_pending","user_decision_pending"},
  "building_audit":{"building_audit_pending","building_audit_gate"},
  "runtime":{"runtime_authorization_pending","runtime_authorized","runtime_step_pending","runtime_step_review_pending","runtime_fix_pending"},
- "runtime_audit":{"milestone_audit_pending","milestone_audit_gate","final_chain_audit_pending","final_chain_audit_gate"},
+ "runtime_audit":{"milestone_audit_pending","milestone_audit_gate","batch_complete_pending","final_chain_audit_pending","final_chain_audit_gate"},
  "runtime_finish":{"runtime_finish_pending","runtime_finished"}}
 ACTION_TARGETS = {
  "resume_or_redispatch_proposer":{"building_incomplete"}, "resume_or_redispatch_implementer":{"building_incomplete"},
@@ -58,7 +59,8 @@ ACTION_TARGETS = {
  "record_runtime_authorization":{"runtime_authorized"},
  "execute_runtime_step":{"runtime_step_pending"}, "dispatch_runtime_step_reviewer":{"runtime_step_review_pending"},
  "retry_runtime_step":{"runtime_step_pending"}, "return_building":{"building_incomplete"}, "return_proposal":{"proposal"},
- "dispatch_milestone_audit":{"milestone_audit_pending"}, "dispatch_final_chain_audit":{"final_chain_audit_pending"}, "dispatch_runtime_finish":{"runtime_finish_pending"}}
+ "dispatch_milestone_audit":{"milestone_audit_pending"}, "advance_next_batch":{"proposal"},
+ "dispatch_final_chain_audit":{"final_chain_audit_pending"}, "dispatch_runtime_finish":{"runtime_finish_pending"}}
 
 def _phase(status, *, runtime=False):
     if status == "user_decision_pending" and runtime:
@@ -264,6 +266,13 @@ def validate_evidence(state):
 def sync_manifests(root, state):
     root=Path(root); refs=state.get("refs", {}); status=state.get("status"); phase=_phase(status, runtime="runtime" in state)
     view={"build_plan":refs.get("build_plan"), "build_plan_sha256":refs.get("build_plan",{}).get("sha256") if refs.get("build_plan") else None}
+    batch_id = state.get("spec_approval", {}).get("batch_id")
+    if batch_id is not None:
+        view["batch_id"] = batch_id
+    elif status == "proposal" and state.get("runtime_history"):
+        prior = state["runtime_history"][-1]
+        if "batch_completed_at" in prior:
+            view["next_batch"] = prior["next_batch"]
     if "git" in state:
         view["git"] = state["git"]
     write(root/"analysis-state.json", {"phase":phase,"status":status,**view,"building_manifest":"building/manifest.json","runtime_manifest":"runtime/manifest.json","next_allowed_actions":list(NEXT.get(status, []))})
@@ -567,9 +576,14 @@ def verify_build_plan_layout(build_plan):
         "## 阶段性验收节点", "## 批准",
         "| 任务 ID | Task MD | 目的与边界 | 前置任务／产物 | 相关 AC |",
         "| 运行步骤 ID | 对应任务 | 前置步骤或节点 | 输入与输出 | 可并行步骤／互斥条件 | 完成检查 |",
-        "| 节点 ID | 节点目的 | 包含的运行步骤 | 前置节点 | 阶段性成果与验收条件 | 用户授权范围 |",
     ]
     missing = [h for h in required if h not in text]
+    node_headers = (
+        "| 节点 ID | 节点目的 | 包含的运行步骤 | 前置节点 | 阶段性成果与验收条件 | 用户授权范围 |",
+        "| 节点 ID | 节点目的 | 建设批次 | 前置建设要求 | 包含的运行步骤 | Runtime 前置节点 | 阶段性成果与验收条件 |",
+    )
+    if not any(header in text for header in node_headers):
+        missing.append(node_headers[1])
     if missing:
         raise SystemExit(json.dumps({"missing": missing}, ensure_ascii=False))
     headings = ["## 目标与边界", "## 源数据、算法与输出", "## 项目目录结构", "## 任务清单", "## Runtime 执行图", "## 阶段性验收节点", "## 批准"]
@@ -590,8 +604,6 @@ def archive_building_cycle(root, state, runtime):
                 "artifact_verifications"):
         if key in state:
             history[key] = state[key]
-            if key != "spec_approval" or runtime["return_stage"] == "Proposal":
-                del state[key]
     if runtime["return_stage"] == "Proposal":
         import sdd_unit_git as unit_git
 
@@ -625,13 +637,17 @@ def archive_building_cycle(root, state, runtime):
             with snapshot.open("xb") as stream:
                 stream.write(content)
         history["spec_snapshots"] = snapshots
+    for key in ("building_gate", "user_acceptance", "spec_approval", "artifact_bindings", "artifacts",
+                "artifact_verifications"):
+        if key != "spec_approval" or runtime["return_stage"] == "Proposal":
+            state.pop(key, None)
     state.setdefault("building_history", []).append(history)
     state.update(tasks={}, task_id=None, fix_round=0, evidence={})
 
 
-def approved_build_plan(plan_path, approval_path):
+def approved_build_plan(plan_path, approval_path, *, completed=()):
     import runtime_harness as runtime
-    from sdd_layout import proposal_layout
+    from sdd_layout import batch_plan, proposal_layout
     import sdd_unit_git as unit_git
 
     runtime.require(approval_path, "Building requires Spec approval evidence")
@@ -646,12 +662,23 @@ def approved_build_plan(plan_path, approval_path):
         unit_git.inside(receipt["path"], unit, "Spec approval receipt", unit_paths=True)
     runtime.require(approval.get("build_plan_sha256") == plan["sha256"],
                     "Spec approval Build Plan fingerprint differs")
+    layout = batch_plan(content)
+    if layout is None:
+        runtime.require(not completed and "batch_id" not in approval,
+                        "Spec approval batch_id requires a batched Build Plan")
+    else:
+        order = list(layout["batches"])
+        runtime.require(order[:len(completed)] == list(completed) and len(completed) < len(order),
+                        "Build Plan must preserve the completed Building batches in order")
+        batch = order[len(completed)]
+        runtime.require(approval.get("batch_id") == batch, f"Spec approval requires eligible batch_id {batch}")
+        declared_tasks = {key: declared_tasks[key] for key in layout["batches"][batch]["tasks"]}
     tasks = runtime.objects(approval.get("task_specs"), "Spec approval Task fingerprint mapping", nonempty=True)
     for task_id, sha256 in tasks.items():
         runtime.matches(task_id, r"T\d+(?:-EXT\d+)?", "Task ID")
         runtime.matches(sha256, runtime.SHA256, "approved Task fingerprint")
     runtime.require(tasks == {key: digest(task["path"]) for key, task in declared_tasks.items()},
-                    "Spec approval must bind every indexed Task MD fingerprint")
+                    "Spec approval must bind exactly the eligible Task MD fingerprints")
     for task in declared_tasks.values():
         runtime.markdown_field(task["path"].read_text(encoding="utf-8"), "approval_status", "approved")
     runtime.text(approval.get("user_message_ref"), "Spec approval user message reference")
@@ -659,7 +686,42 @@ def approved_build_plan(plan_path, approval_path):
     return unit, plan, approval, receipt
 
 
-def rebind_proposal(args, state):
+def verify_completed_plan(plan, completed, state):
+    import runtime_harness as runtime
+    from sdd_layout import BATCH_NODES_HEADER, ENTRY_HEADER, RESULT_HEADER, STEPS_HEADER, TASK_HEADER, batch_plan, table
+
+    current_plan = batch_plan(plan)
+    for run in completed:
+        history = next(item for item in state["building_history"] if item["run_id"] == run["contract"]["run_id"])
+        snapshots = history["spec_snapshots"]
+        for record in snapshots.values():
+            _validate_record(record, "completed batch spec")
+        previous = Path(snapshots["build-plan"]["path"]).read_text(encoding="utf-8")
+        batch = run["batch_id"]
+        scope = batch_plan(previous)["batches"][batch]
+        runtime.require(current_plan["batches"].get(batch) == scope,
+                        f"completed Building batch scope changed: {batch}")
+        for heading, header, identifiers in (
+            ("## 任务清单", TASK_HEADER, scope["tasks"]),
+            ("## 项目目录结构", ENTRY_HEADER, scope["tasks"]),
+            ("## Runtime 执行图", STEPS_HEADER, scope["steps"]),
+            ("## 阶段性验收节点", BATCH_NODES_HEADER, scope["nodes"]),
+        ):
+            original = [row for row in table(previous, heading, header) if row[0] in identifiers]
+            current = [row for row in table(plan, heading, header) if row[0] in identifiers]
+            runtime.require(original == current, f"completed Building batch plan rows changed: {batch} {heading}")
+        outputs = {value for step in run["contract"]["steps"].values() for value in step["outputs"]}
+        original = [row for row in table(previous, "### 拟得到的输出", RESULT_HEADER, allow_empty=True)
+                    if row[2].strip("`") in outputs]
+        current = [row for row in table(plan, "### 拟得到的输出", RESULT_HEADER, allow_empty=True)
+                   if row[2].strip("`") in outputs]
+        runtime.require(original == current, f"completed Building batch outputs changed: {batch}")
+        for task_id in scope["tasks"]:
+            _validate_record({"path": history["tasks"][task_id]["task_spec_path"],
+                              "sha256": snapshots[task_id]["sha256"]}, f"completed task {task_id}")
+
+
+def rebind_proposal(args, state, state_path):
     import runtime_harness as runtime
     import sdd_unit_git as unit_git
 
@@ -669,7 +731,12 @@ def rebind_proposal(args, state):
                     "proposal-rebind requires a current Runtime return to Proposal")
     runtime.require(args.build_plan and args.evidence, "proposal-rebind requires --build-plan and fresh Spec approval evidence")
     binding = state.get("git")
-    unit, plan, approval, receipt = approved_build_plan(args.build_plan, args.evidence)
+    completed = [run for run in prior_runs if "batch_completed_at" in run]
+    unit, plan, approval, receipt = approved_build_plan(args.build_plan, args.evidence,
+                                                        completed=[run["batch_id"] for run in completed])
+    if completed:
+        verify_completed_plan(Path(plan["path"]).read_text(encoding="utf-8"), completed, state)
+        runtime.Runtime(state, None, verify_report_layout, state_path=state_path).verify_completed_batches()
     if binding:
         runtime.require(unit == Path(binding["unit_root"])
                         and plan["path"] == state["refs"]["build_plan"]["path"],
@@ -678,9 +745,17 @@ def rebind_proposal(args, state):
         raise ValueError("declared unit Git root requires a fresh unit-scoped Building init")
     ref = approval["user_message_ref"]
     prior_refs = {entry["building_audit"]["binding"]["spec_approval_ref"] for entry in prior_runs}
-    decision = prior_runs[-1]["return_decisions"][-1]["decision"]
-    prior_refs.add(decision["user_message_ref"])
-    runtime.require(ref not in prior_refs and runtime.timestamp(approval.get("approved_at")) > runtime.timestamp(decision["decided_at"]),
+    prior_refs.update(runtime.earlier_batched_run_message_refs(state, approval.get("batch_id")))
+    prior = prior_runs[-1]
+    if "batch_completed_at" in prior:
+        eligible_at = prior["batch_completed_at"]
+    else:
+        decision = prior["return_decisions"][-1]["decision"]
+        eligible_at = decision["decided_at"]
+        prior_refs.add(decision["user_message_ref"])
+    prior_refs.update(audit["acceptance"]["user_message_ref"]
+                      for run in completed for audit in run["audits"].values())
+    runtime.require(ref not in prior_refs and runtime.timestamp(approval.get("approved_at")) > runtime.timestamp(eligible_at),
                     "fresh Spec approval must follow the Proposal return and use a new user message")
     state.update(refs={"build_plan": plan, "spec_approval": receipt}, spec_approval=approval,
                  building_baseline=unit_git.head(Path(binding["worktree"])),
@@ -733,7 +808,7 @@ def _main(args, path):
             raise SystemExit("Runtime return to Proposal requires proposal-rebind with fresh Spec approval")
     if args.action == "proposal-rebind":
         try:
-            rebind_proposal(args, state)
+            rebind_proposal(args, state, path)
         except (ValueError, OSError, KeyError, TypeError) as exc:
             raise SystemExit(f"invalid Proposal rebind evidence: {exc}") from None
         write(path, state)
@@ -850,15 +925,20 @@ def _main(args, path):
                 task = sdd_layout.task_expectations(plan_path).get(task_id)
                 if not task or task["path"] != Path(spec["path"]).resolve():
                     raise SystemExit("Task MD path differs from the approved Build Plan: " + task_id)
-        if parent and parent not in state.get("tasks", {}): raise SystemExit("parent task not registered")
         extension=parent is not None
         if extension:
-            parent_task = state["tasks"][parent]
+            completed_runs = {run["contract"]["run_id"] for run in state.get("runtime_history", [])
+                              if "batch_completed_at" in run}
+            inherited_tasks = {key: task for entry in state.get("building_history", [])
+                               if entry["run_id"] in completed_runs for key, task in entry["tasks"].items()}
+            available_tasks = {**inherited_tasks, **state["tasks"]}
+            if parent not in available_tasks: raise SystemExit("parent task not registered")
+            parent_task = available_tasks[parent]
             if parent_task.get("status") != "task_complete": raise SystemExit("extension requires completed parent task")
             if not args.affected_task or not args.reusable_output or not args.invalidated_output or not args.inheritance_constraint: raise SystemExit("extension requires affected-task, reusable-output, invalidated-output and inheritance-constraint")
             if set(args.reusable_output) & set(args.invalidated_output): raise SystemExit("extension output cannot be both reusable and invalidated")
         if any(not re.fullmatch(r"T\d+(?:-EXT\d+)?", x) for x in args.affected_task): raise SystemExit("invalid affected-task")
-        if extension and any(x != parent and x not in state.get("tasks", {}) for x in args.affected_task): raise SystemExit("extension affected task not registered")
+        if extension and any(x not in available_tasks for x in args.affected_task): raise SystemExit("extension affected task not registered")
         state.setdefault("tasks", {})[task_id] = {"status":"building_incomplete", "parent_task_id":parent, "task_kind":"extension" if extension else "base", "task_spec_path":spec["path"], "task_spec_sha256":spec["sha256"], "affected_tasks":args.affected_task, "reusable_outputs":args.reusable_output, "invalidated_outputs":args.invalidated_output, "inheritance_constraints":args.inheritance_constraint, "next_allowed_actions":list(NEXT["building_incomplete"])}
         state["task_id"] = task_id
         state["fix_round"] = 0

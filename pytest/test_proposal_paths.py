@@ -264,3 +264,38 @@ def test_building_preserves_a_legacy_entry_outside_build(proposal, tmp_path, mon
     git("commit", "-m", "modified legacy script")
     with pytest.raises(ValueError, match="unchanged.*scripts/build"):
         verify_building_paths(tmp_path, plan, [base], git("rev-parse", "HEAD"))
+
+
+def test_batch_plan_uses_the_existing_node_table(proposal, monkeypatch):
+    monkeypatch.syspath_prepend(str(SCRIPTS))
+    from sdd_layout import BATCH_NODES_HEADER, NODES_HEADER, batch_plan
+
+    plan, _ = proposal
+    content = plan.read_text(encoding="utf-8")
+    assert batch_plan(content) is None
+
+    content = content.replace(
+        "| T01 | [Task MD](tasks/task-01/task-01.md) | Count | 无 | T01-AC01 |",
+        "| T01 | [Task MD](tasks/task-01/task-01.md) | Count | 无 | T01-AC01 |\n"
+        "| T02 | [Task MD](tasks/task-02/task-02.md) | Confirm | T01 | T02-AC01 |",
+    ).replace(
+        "| R01 | T01 | 无 | Count | 无 | Smoke |",
+        "| R01 | T01 | 无 | Count | 无 | Smoke |\n"
+        "| R02 | T01 | R01、N01 | Count | 无 | Smoke |\n"
+        "| R03 | T02 | R02、N02 | Confirm | 无 | Smoke |",
+    ).replace(
+        NODES_HEADER + "\n|---|---|---|---|---|---|\n| N01 | Count | R01 | 无 | Outputs | All |",
+        BATCH_NODES_HEADER + "\n|---|---|---|---|---|---|---|\n"
+        "| N01 | Count | B01 | 无 | R01 | 无 | Outputs |\n"
+        "| N02 | Pilot | B01 | 无 | R02 | N01 | Outputs |\n"
+        "| N03 | Confirm | B02 | N02 已验收。核定正式条件 | R03 | N02 | Outputs |",
+    )
+    scopes = batch_plan(content)["batches"]
+    assert scopes["B01"] == {"tasks": {"T01"}, "nodes": {"N01", "N02"},
+                             "steps": {"R01", "R02"}, "needs": set()}
+    assert scopes["B02"] == {"tasks": {"T02"}, "nodes": {"N03"},
+                             "steps": {"R03"}, "needs": {"N02"}}
+    with pytest.raises(ValueError, match="eligible batch"):
+        batch_plan(content.replace("N02 已验收", "N03 已验收"))
+    with pytest.raises(ValueError, match="must share a Building batch"):
+        batch_plan(content.replace("| R03 | T02 |", "| R03 | T01 |"))

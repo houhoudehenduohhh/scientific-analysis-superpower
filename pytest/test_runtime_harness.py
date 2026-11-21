@@ -199,7 +199,8 @@ class Scenario:
         return json.loads(result.stdout) if command.startswith("runtime-") else result
 
     def initialize(self, denied=None, *, register_gate=True, contract_path=None, receipt_path=None,
-                   building_assessment="PASS", **overrides):
+                   building_assessment="PASS", hash_free_building=False, legacy_building_fields=None,
+                   nested_legacy_building_fields=False, **overrides):
         version = "" if self.building_audit_id == "B001" else "-" + self.building_audit_id
         contract = self.file(contract_path or f".tmp/contract{version}.json", self.contract)
         if self.building_report is None:
@@ -208,9 +209,14 @@ class Scenario:
                 "task_specs": json.dumps(self.contract["task_specs"]), "contract_sha256": fingerprint(contract),
                 "limitations": "[]",
             }
+            if hash_free_building:
+                del fields["contract_sha256"]
+            fields.update(legacy_building_fields or {})
             template = (TEMPLATES / "building-audit-report.md").read_text(encoding="utf-8")
             template = "\n".join(line for line in template.splitlines()
                                  if not any(line.startswith("- `" + key + ":") for key in fields))
+            field_prefix = "    - " if nested_legacy_building_fields else "- "
+            fields_heading = "\n- Legacy audit metadata\n" if nested_legacy_building_fields else "\n"
             self.building_report = self.file(f"audits/building/{self.building_audit_id}_building.md",
                 template
                 .replace("audit_id: <当前审计 ID>", f"audit_id: {self.building_audit_id}")
@@ -219,7 +225,7 @@ class Scenario:
                          "| 任务 ID | 任务目的 | AC 及完成边界 | 完成情况与未验证范围 | 人工任务报告 |")
                 .replace("| | | | | |\n\n## 审计门禁记录",
                          f"| T01 | fixture | T01-AC01 | complete | [报告](report/{self.human_report.name}) |\n\n## 审计门禁记录")
-                + "\n" + "\n".join(f"- `{key}: {value}`" for key, value in fields.items()))
+                + fields_heading + "\n".join(f"{field_prefix}`{key}: {value}`" for key, value in fields.items()))
             self.cli("transition", "--to", "building_audit_gate", "--evidence", self.building_report)
             if register_gate:
                 self.cli("gate", "--artifact", self.root, "--evidence", self.gate)
@@ -416,11 +422,26 @@ def test_runtime_lifecycle_requires_independent_review_and_distinct_user_gates(s
     scenario.cli("runtime-finish", "--artifact", finish, denied="Runtime Audit gate")
     scenario.accept("final_chain", final)
     scope = scenario.cli("runtime-scope", "final_chain")
-    identities = [value for node in scope["nodes"] for value in (node["audit_id"], node["run_hash"])]
+    audit_ids = [final["audit_id"], *[node["audit_id"] for node in scope["nodes"]]]
     results = [record["path"] for outputs in scope["outputs"].values() for record in outputs.values()]
-    report = ("## 阶段性结果\n\n计数为三。\n\n## 结果局限\n\n仅为测试数据。\n" if hash_free_finish
-              else "\n".join(["## 当前状态与追溯", "## 结果概览", "## 已审结果清单", "## 关键发现与限制",
-                                "## 复现与交付核对", final["scope_hash"], final["audit_id"], *identities, *results]))
+    if hash_free_finish:
+        sections = ["## 阶段性结果", "计数为三。", "## 结果局限", "仅为测试数据。"]
+        links = [f"- [审定结果 {index}]({Path(path).as_posix()})" for index, path in enumerate(results, 1)]
+        for omitted, message in [
+            (audit_ids[0], "accepted runtime_audit_id"),
+            (audit_ids[1], "each accepted milestone audit"),
+            (links[0], "link each audited output"),
+        ]:
+            report_lines = [*sections[:2], *audit_ids, *links, *sections[2:]]
+            report_lines.remove(omitted)
+            scenario.file(finish, "\n\n".join(report_lines) + "\n")
+            scenario.cli("runtime-finish", "--artifact", finish, denied=message)
+        report = "\n\n".join([*sections[:2], *audit_ids, *links, *sections[2:]]) + "\n"
+        assert all(node["run_hash"] not in report for node in scope["nodes"])
+    else:
+        report = "\n".join(["## 当前状态与追溯", "## 结果概览", "## 已审结果清单", "## 关键发现与限制",
+                            "## 复现与交付核对", final["scope_hash"], *audit_ids,
+                            *[node["run_hash"] for node in scope["nodes"]], *results])
     scenario.file("reports/runtime_finish.md", report)
     assert scenario.cli("runtime-finish", "--artifact", finish)["status"] == "runtime_finished"
     assert (final["scope_hash"] in finish.read_text(encoding="utf-8")) == (not hash_free_finish)
@@ -477,6 +498,110 @@ def test_runtime_revalidates_upstream_step_review_receipt(scenario):
 
 def test_runtime_requires_durable_building_gate(scenario):
     scenario.initialize(register_gate=False, denied="durable Building gate evidence")
+
+
+@pytest.mark.parametrize("first_binding", ["manifest", "legacy", "null"])
+def test_building_gate_cannot_replace_a_formal_reports_runtime_contract(scenario, first_binding):
+    scenario.initialize(register_gate=False, denied="durable Building gate evidence",
+                        hash_free_building=first_binding != "legacy")
+    gate_data = json.loads(scenario.gate.read_text(encoding="utf-8"))
+    contract = scenario.root / ".tmp/contract.json"
+    binding = {"report_sha256": fingerprint(scenario.building_report),
+               "contract_sha256": None if first_binding == "null" else fingerprint(contract)}
+    if first_binding != "legacy":
+        scenario.file(scenario.gate, gate_data | {"audit_binding": {"report_sha256": binding["report_sha256"]}})
+        scenario.cli("gate", "--artifact", scenario.root, "--evidence", scenario.gate,
+                     denied="requires contract_sha256")
+        scenario.file(scenario.gate, gate_data | {"audit_binding": binding})
+    scenario.cli("gate", "--artifact", scenario.root, "--evidence", scenario.gate)
+    state_before = scenario.state.read_bytes()
+    scenario.cli("gate", "--artifact", scenario.root, "--evidence", scenario.gate)
+    assert scenario.state.read_bytes() == state_before
+
+    alternate = scenario.file(".tmp/alternate-contract.json", scenario.contract | {"run_id": "alternate"})
+    replacement = scenario.file(scenario.gate.with_name("replacement-gate.json"), gate_data | {
+        "audit_binding": binding | {"contract_sha256": fingerprint(alternate)},
+    })
+    scenario.cli("gate", "--artifact", scenario.root, "--evidence", replacement,
+                 denied="cannot change its Runtime contract binding")
+    if first_binding == "manifest":
+        scenario.file(replacement, gate_data)
+        scenario.cli("gate", "--artifact", scenario.root, "--evidence", replacement,
+                     denied="cannot change its Runtime contract binding")
+    assert scenario.state.read_bytes() == state_before
+    scenario.contract["run_id"] = "alternate"
+    scenario.initialize(contract_path=alternate, receipt_path=".tmp/alternate-receipt.json",
+                        denied="Markdown contract_sha256" if first_binding == "legacy" else
+                        "manifest bindings differ")
+    assert scenario.state.read_bytes() == state_before
+
+    if first_binding != "null":
+        scenario.contract["run_id"] = "synthetic"
+        scenario.initialize()
+
+
+@pytest.mark.parametrize("declares_null, nested", [
+    (False, False), (True, False), (False, True),
+], ids=["digest", "null", "nested-digest"])
+def test_first_building_gate_must_match_legacy_report_contract(scenario, declares_null, nested):
+    legacy_fields = {"contract_sha256": "null"} if declares_null else None
+    scenario.initialize(register_gate=False, denied="durable Building gate evidence",
+                        legacy_building_fields=legacy_fields, nested_legacy_building_fields=nested)
+    gate_data = json.loads(scenario.gate.read_text(encoding="utf-8"))
+    contract = scenario.root / ".tmp/contract.json"
+    alternate = scenario.file(".tmp/alternate-contract.json", scenario.contract | {"run_id": "alternate"})
+    state_before = scenario.state.read_bytes()
+    binding = {"report_sha256": fingerprint(scenario.building_report)}
+    conflicting = [fingerprint(alternate)] if declares_null else [fingerprint(alternate), None]
+    for contract_hash in conflicting:
+        scenario.file(scenario.gate, gate_data | {"audit_binding": binding | {"contract_sha256": contract_hash}})
+        scenario.cli("gate", "--artifact", scenario.root, "--evidence", scenario.gate,
+                     denied="Markdown contract_sha256 differs")
+        assert scenario.state.read_bytes() == state_before
+
+    contract_hash = None if declares_null else fingerprint(contract)
+    scenario.file(scenario.gate, gate_data | {"audit_binding": binding | {"contract_sha256": contract_hash}})
+    scenario.cli("gate", "--artifact", scenario.root, "--evidence", scenario.gate)
+    scenario.initialize(denied="manifest bindings differ" if declares_null else None)
+
+
+@pytest.mark.parametrize("field, stale", [
+    ("code_commit", "a" * 40), ("build_plan_sha256", "b" * 64), ("task_specs", "null"),
+])
+def test_first_building_gate_rejects_stale_legacy_identifiers(scenario, field, stale):
+    scenario.initialize(register_gate=False, denied="durable Building gate evidence",
+                        legacy_building_fields={field: stale})
+    gate_data = json.loads(scenario.gate.read_text(encoding="utf-8"))
+    scenario.file(scenario.gate, gate_data | {"audit_binding": {
+        "report_sha256": fingerprint(scenario.building_report),
+        "contract_sha256": fingerprint(scenario.root / ".tmp/contract.json"),
+    }})
+    scenario.cli("gate", "--artifact", scenario.root, "--evidence", scenario.gate,
+                 denied=f"Markdown {field} differs")
+
+
+def test_runtime_revalidates_legacy_report_for_existing_manifest_gate(scenario):
+    scenario.initialize(register_gate=False, denied="durable Building gate evidence")
+    scenario.cli("gate", "--artifact", scenario.root, "--evidence", scenario.gate)
+
+    scenario.contract["run_id"] = "alternate"
+    alternate = scenario.file(".tmp/alternate-contract.json", scenario.contract)
+    binding = {"report_sha256": fingerprint(scenario.building_report), "contract_sha256": fingerprint(alternate)}
+    # Reproduce the durable records written by a first registration on an older Harness.
+    gate_data = json.loads(scenario.gate.read_text(encoding="utf-8"))
+    scenario.file(scenario.gate, gate_data | {"audit_binding": binding})
+    state = json.loads(scenario.state.read_text(encoding="utf-8"))
+    state["building_gate"]["audit_binding"] = binding
+    state["building_gate"]["files"][0].update(
+        sha256=fingerprint(scenario.gate), bytes=scenario.gate.stat().st_size)
+    scenario.file(scenario.state, state)
+    manifest = scenario.state.parent / "building/manifest.json"
+    scenario.file(manifest, json.loads(manifest.read_text(encoding="utf-8")) | {"audit_binding": binding})
+    state_before = scenario.state.read_bytes()
+
+    scenario.initialize(contract_path=alternate, denied="Markdown contract_sha256 differs")
+
+    assert scenario.state.read_bytes() == state_before
 
 
 @pytest.mark.parametrize("section_format", [
@@ -586,7 +711,8 @@ def test_return_to_building_starts_clean_cycle_after_repaired_task(tmp_path):
     assert scenario.run("S1")["exit_code"] == 0
 
 
-def test_return_to_proposal_rebind_requires_new_approval_and_preserves_history(scenario):
+@pytest.mark.parametrize("batch_id", [None, "B01"], ids=["legacy", "first-batch"])
+def test_return_to_proposal_rebind_requires_new_approval_and_preserves_history(scenario, batch_id):
     returned = scenario.return_step("Proposal")
     plan = scenario.root / "specs/build_plan.md"
     task = scenario.root / "specs/tasks/T01.md"
@@ -600,6 +726,18 @@ def test_return_to_proposal_rebind_requires_new_approval_and_preserves_history(s
 | 任务 ID | 主入口路径 | 变更（新增／既有／迁移） |
 |---|---|---|
 | T01 | scripts/build/job.py | 迁移 |""").replace("tasks/T01.md", "tasks/task-01/task-01.md")
+    if batch_id:
+        plan_text = plan_text.replace(
+            "| 节点 ID | 节点目的 | 包含的运行步骤 | 前置节点 | 阶段性成果与验收条件 | 用户授权范围 |",
+            "| 节点 ID | 节点目的 | 建设批次 | 前置建设要求 | 包含的运行步骤 | "
+            "Runtime 前置节点 | 阶段性成果与验收条件 |",
+        ).replace(
+            "|---|---|---|---|---|---|\n| N01 | fixture 1 | S1、S2 | 无 | output fixture | S1、S2 |\n"
+            "| N02 | fixture 2 | S3 | N01 | output fixture | S3 |",
+            "|---|---|---|---|---|---|---|\n"
+            f"| N01 | fixture 1 | {batch_id} | 无 | S1、S2 | 无 | output fixture |\n"
+            f"| N02 | fixture 2 | {batch_id} | 无 | S3 | N01 | output fixture |",
+        )
     plan.write_text(plan_text, encoding="utf-8")
     revised_task = scenario.file("specs/tasks/task-01/task-01.md", task.read_text(encoding="utf-8").replace(
         "## 输入、脚本与输出\n", "## 输入、脚本与输出\n- 主入口路径：`scripts/build/job.py`\n"))
@@ -611,8 +749,15 @@ def test_return_to_proposal_rebind_requires_new_approval_and_preserves_history(s
         "build_plan_sha256": fingerprint(plan), "task_specs": {"T01": fingerprint(revised_task)},
         "approved_at": datetime.now(timezone.utc).isoformat(), "user_message_ref": "user-spec-approval",
     }
+    if batch_id:
+        approval["batch_id"] = batch_id
     evidence = scenario.file(".tmp/revised-spec-approval.json", approval)
     scenario.cli("proposal-rebind", "--build-plan", plan, "--evidence", evidence, denied="fresh Spec approval")
+    if batch_id:
+        legacy_auth = returned["runtime_history"][0]["authorizations"][0]["approval"]
+        approval["user_message_ref"] = legacy_auth["user_message_ref"]
+        scenario.file(".tmp/revised-spec-approval.json", approval)
+        scenario.cli("proposal-rebind", "--build-plan", plan, "--evidence", evidence, denied="fresh Spec approval")
     approval["user_message_ref"] = "user-approves-revised-scope"
     scenario.file(".tmp/revised-spec-approval.json", approval)
     scenario.cli("proposal-rebind", "--build-plan", plan, "--evidence", evidence)
