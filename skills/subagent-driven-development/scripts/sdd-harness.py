@@ -271,6 +271,11 @@ def sync_manifests(root, state):
     if state.get("building_history") and not state.get("tasks"):
         bp = {"final_review": "pending", "building_audit": "blocked"}
     bp.update({"phase":"building","status":status if phase in {"proposal", "building", "building_audit"} else bp.get("status","building_audit_gate"),**view,"runtime_manifest":"runtime/manifest.json","tasks":state.get("tasks",bp.get("tasks",{})),"evidence":state.get("evidence",bp.get("evidence",{})),"user_acceptance":state.get("user_acceptance",bp.get("user_acceptance"))})
+    audit_binding = (state.get("building_gate") or {}).get("audit_binding")
+    if audit_binding is None:
+        bp.pop("audit_binding", None)
+    else:
+        bp["audit_binding"] = audit_binding
     write(root/"building/manifest.json",bp)
     rp=read(root/"runtime/manifest.json") if (root/"runtime/manifest.json").exists() else {}
     if state.get("runtime_history") and "runtime" not in state:

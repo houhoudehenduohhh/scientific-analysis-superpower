@@ -70,7 +70,7 @@ Build Plan 不展开每个任务的全部实现细节。具体任务内容写入
 - 测试、冒烟测试或 Runtime 验证要求
 - 上下游影响
 - 是否需要重新审查下游任务
-- 审批引用和文件指纹
+- 审批引用和文档版本
 
 新增分析或补充研究应在父任务目录下新增完整 ID 的 Task MD，并更新 Build Plan 的任务索引。只有在研究目标、数据资格或上位算法边界发生变化时，才需要修改 Build Plan 的总体部分。
 
@@ -81,7 +81,7 @@ Build Plan 不展开每个任务的全部实现细节。具体任务内容写入
 3. 生成或更新 `build_plan.md`。
 4. 根据任务概要生成一个或多个 Task MD。
 5. 检查任务之间的依赖、接口、AC 和 Runtime 步骤图。
-6. 向用户呈现 Build Plan、Task MD、待决事项、版本指纹和拟初始化 Git 的绝对路径。
+6. 向用户呈现 Build Plan、Task MD、待决事项、版本编号和拟初始化 Git 的绝对路径。
 7. 用户批准当前版本后，停止 Proposal，进入 Building。
 
 Proposal 阶段允许多轮修改。用户未批准前，不能派发实现 Agent，不能写生产代码，不能生成 Building Audit，也不能启动 Runtime。

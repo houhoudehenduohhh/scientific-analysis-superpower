@@ -145,9 +145,7 @@ def test_structured_proposal_to_runtime_finish(proposal, tmp_path, reopen):
             "executable_sha256": fingerprint(Path(sys.executable)), "resources": {"timeout_seconds": 15},
         }},
     })
-    building_fields = {**building_identity, "task_specs": json.dumps(building_identity["task_specs"]),
-                       "audit_id": "B001", "assessment": "PASS", "limitations": "[]",
-                       "contract_sha256": fingerprint(contract)}
+    building_fields = {"audit_id": "B001", "assessment": "PASS", "limitations": "[]"}
     building_template = render("building-audit-report.md", building_fields)
     old_index_start = building_template.index("## 6. 任务验收索引")
     old_index_end = building_template.index("## 审计门禁记录", old_index_start)
@@ -159,7 +157,14 @@ def test_structured_proposal_to_runtime_finish(proposal, tmp_path, reopen):
                           f"Task T01: complete (commits {base}..{head}, review clean) · {fingerprint(task)}")),
         "tasks": {"T01": {"brief": str(put(workspace / "building/brief.md", task.read_text(encoding="utf-8")))}},
     })
+    gate_data = json.loads(gate.read_text(encoding="utf-8"))
+    audit_binding = {"report_sha256": fingerprint(report), "contract_sha256": fingerprint(contract)}
+    put(gate, gate_data | {"audit_binding": audit_binding | {"report_sha256": "0" * 64}})
+    project.cli("gate", "--artifact", tmp_path, "--evidence", gate, denied="report fingerprint mismatch")
+    put(gate, gate_data | {"audit_binding": audit_binding})
     project.cli("gate", "--artifact", tmp_path, "--evidence", gate)
+    building_manifest = json.loads((workspace / "building/manifest.json").read_text(encoding="utf-8"))
+    assert building_manifest["audit_binding"] == audit_binding
     building_receipt = put(runtime / "evidence/building.json", {
         **building_identity, "contract_sha256": fingerprint(contract), "audit_id": "B001", "assessment": "PASS",
         "report_sha256": fingerprint(report), "report_presented_at": "2024-01-01T00:00:00+00:00",
@@ -173,6 +178,7 @@ def test_structured_proposal_to_runtime_finish(proposal, tmp_path, reopen):
     put(building_receipt, current_building_receipt)
     project.cli("runtime-init", "--artifact", contract, "--evidence", building_receipt)
     assert manifest()["schema_version"] == 2
+    assert manifest()["building_audit"]["binding"]["contract_sha256"] == fingerprint(contract)
     project.cli("runtime-run", "R01", "--actor", "executor", denied="not authorized")
     project.cli("runtime-authorize", "--evidence", put(runtime / "evidence/authorization.json", {
         "audit_id": "B001", "contract_sha256": fingerprint(contract), "authorized_at": clock(),
@@ -206,16 +212,17 @@ def test_structured_proposal_to_runtime_finish(proposal, tmp_path, reopen):
             summary = project.cli("runtime-report", scope)
             assert Path(summary["path"]).parent == runtime / "reports"
         binding = project.cli("runtime-scope", scope)
-        label = "run_hash" if scope == "N01" else "chain_hash"
         fields = {"audit_scope": binding["audit_scope"], "runtime_audit_id": binding["audit_id"],
-                  label: binding["scope_hash"], "runtime_audit_status": "PASS", "return_stage": "none",
+                  "runtime_audit_status": "PASS", "return_stage": "none",
                   "limitations": "[]"}
         content = render("runtime-audit-report.md", fields)
         content = content.replace("| | | | |\n\n## 审计门禁记录", "| T01／R01／N01 | 计数为 1 | T01-AC01 通过，覆盖合成数据 | 通过 |\n\n## 审计门禁记录")
         report = put(f"audits/runtime/{sequence}-{scope}.md", content)
+        assert fingerprint(contract) not in building_template
+        assert binding["scope_hash"] not in content
         evidence = put(runtime / f"evidence/audit-{sequence}.json", {
             "scope_hash": binding["scope_hash"], "auditor": "formal-auditor", "report": str(report),
-            "assessment": "PASS", "limitations": [], "route": None,
+            "assessment": "PASS", "limitations": [], "route": None, "report_sha256": fingerprint(report),
         })
         if sequence == 1:
             for altered in (
@@ -225,9 +232,14 @@ def test_structured_proposal_to_runtime_finish(proposal, tmp_path, reopen):
                 content.replace("T01／R01／N01", "T01／R01"),
             ):
                 put(report, altered)
+                put(evidence, json.loads(evidence.read_text(encoding="utf-8")) | {"report_sha256": fingerprint(report)})
                 project.cli("runtime-audit", scope, "--evidence", evidence, denied="human-readable acceptance index")
                 assert scope not in manifest()["audits"]
+            put(report, content + "\n额外内容\n")
+            put(evidence, json.loads(evidence.read_text(encoding="utf-8")) | {"report_sha256": fingerprint(report)})
             put(report, content)
+            project.cli("runtime-audit", scope, "--evidence", evidence, denied="report fingerprint mismatch")
+            put(evidence, json.loads(evidence.read_text(encoding="utf-8")) | {"report_sha256": fingerprint(report)})
         project.cli("runtime-audit", scope, "--evidence", evidence)
         return binding
 
@@ -239,6 +251,12 @@ def test_structured_proposal_to_runtime_finish(proposal, tmp_path, reopen):
         return project.cli("runtime-accept", scope, "--evidence", evidence, denied=denied)
 
     node = audit("N01", 1)
+    node_report = tmp_path / "audits/runtime/1-N01.md"
+    original = node_report.read_bytes()
+    node_report.write_bytes(original + b"\nchanged after registration\n")
+    accept("N01", node, 1, denied="fingerprint changed")
+    assert "acceptance" not in manifest()["audits"]["N01"]
+    node_report.write_bytes(original)
     finish = put("reports/runtime-finish.md", "# 已验收结果\n\n## 阶段性结果\n\n计数为 1。\n\n## 结果局限\n\n合成数据。\n")
     project.cli("runtime-finish", "--artifact", finish, denied="Runtime Audit gate")
     accept("N01", node, 1, denied="acceptance scope mismatch", scope_hash="bad-hash")

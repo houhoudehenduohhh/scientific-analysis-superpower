@@ -16,9 +16,9 @@ Runtime Report：[RUNTIME_REPORT_FILE]
 报告输出路径：[RUNTIME_AUDIT_REPORT_FILE]
 报告模板：[RUNTIME_AUDIT_TEMPLATE_FILE]
 
-模板内的 audit_scope、runtime_audit_id、run_hash 或 chain_hash、runtime_audit_status、return_stage、limitations、audit_user_decision，各写成独立的字段行。limitations 用 JSON 字符串数组，未发现限制时用 []。协调者登记的结构化裁决须与所呈现报告一致。
+模板内的 audit_scope、runtime_audit_id、runtime_audit_status、return_stage、limitations、audit_user_decision，各写成独立的字段行。limitations 用 JSON 字符串数组，未发现限制时用 []。协调者登记的结构化裁决须与所呈现报告一致。
 
 先独立核实实际输入、代码、配置、运行经过和结果是否属于同一版本；节点审计逐 AC 查步骤与跨任务交接，最终审计查所有已接受节点的哈希链、最终结果及科学解释。区分已证实缺陷、证据不足、结果虽不理想但符合方案。指出每项问题的证据、影响、严重程度和建议返回阶段，并填写证据、批准依据、拟修改对象、受影响产物/下游的返工判定卡。对未检查的内容明确写“未验证”，不要把 Runtime Report 的主张直接当成审计事实。
 
-只写审计报告，不修改代码、源数据、配置、日志或结果；不自行重跑正式分析，也不派其他 Reviewer。按模板给出 PASS、PASS_WITH_NOTES、CHANGES_REQUIRED 或 BLOCKED，记录本范围的 run_hash 或 chain_hash 与 runtime_audit_id。用户裁决栏保持 pending。完成后仅回报结论、重大问题和报告路径，等待用户决定。
+只写审计报告，不修改代码、源数据、配置、日志或结果；不自行重跑正式分析，也不派其他 Reviewer。按模板给出 PASS、PASS_WITH_NOTES、CHANGES_REQUIRED 或 BLOCKED，正文记录 runtime_audit_id 和范围。将范围指纹和正式报告文件指纹交给协调者登记到审计 JSON。用户裁决栏保持 pending。完成后仅回报结论、重大问题和报告路径，等待用户决定。
 ```

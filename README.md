@@ -17,13 +17,13 @@ flowchart TD
     BAG -- 代码返工 --> B
     BAG -- 接受并授权 --> R[Runtime 步骤<br/>运行、自动独立审查、至多五轮修复复审]
     R --> RA[节点 Runtime Audit<br/>整体初审及至多一次集中修复复审]
-    RA --> RAG{节点门禁<br/>用户接受该节点 run_hash?}
+    RA --> RAG{节点门禁<br/>用户接受该节点报告?}
     RAG -- 运行条件问题 --> R
     RAG -- 代码问题 --> B
     RAG -- 科学方案问题 --> P
     RAG -- 接受且后续已授权 --> R
     RAG -- 全部节点接受 --> FA[最终全链条结果审计]
-    FA --> FAG{最终门禁<br/>用户接受 chain_hash?}
+    FA --> FAG{最终门禁<br/>用户接受最终审计报告?}
     FAG -- 运行条件或结果缺陷 --> R
     FAG -- 代码问题 --> B
     FAG -- 科学方案问题 --> P

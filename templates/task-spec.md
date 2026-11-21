@@ -46,7 +46,7 @@
 ## 审批引用
 
 - approval_status: pending（pending / approved / rejected）
-- 批准版本或文件指纹：
+- 批准版本：
 - approved_by：
 - approved_at：
 - 备注：

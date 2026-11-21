@@ -6,10 +6,9 @@
 
 - 功能单元及本轮审查目的：
 - `audit_scope: milestone | final_chain`
-- Build Plan、受审 Task MD 路径及指纹：
-- 已接受的 Building `audit_id` 与代码提交：
+- Build Plan、受审 Task MD 路径及版本：
+- 已接受的 Building `audit_id` 与代码版本：
 - Runtime Report 路径、节点／步骤及 `run_id`：
-- `run_hash: <节点哈希>` 或 `chain_hash: <全链条哈希>`。按当前范围保留一项，单独成行。
 - 实际输入、配置、环境、日志与结果清单：
 - 上游已接受节点审计 ID、版本及复用产物：
 - `runtime_audit_id: <当前审计 ID>`
@@ -24,7 +23,7 @@
 |---|---|---|---|---|
 | | | | | |
 
-每项需要返工的发现还要记录：批准依据、根因或未知、拟修改对象、受影响产物及下游节点、需要生成的新 `run_hash` 或 `chain_hash`。
+每项需要返工的发现还要记录：批准依据、根因或未知、拟修改对象、受影响产物及下游节点、需要重新审查的节点或全链条范围。
 
 ## 3. 有待改进或商讨的地方
 
@@ -65,7 +64,5 @@
 - `limitations: []`（将接受范围内的限制写为 JSON 字符串数组，单独成行）
 - `audit_user_decision: pending`
 - `accepted_runtime_audit_id: null`
-- `accepted_run_hash: null`
-- `accepted_chain_hash: null`
 
 `PASS` 或用户接受限制的 `PASS_WITH_NOTES` 才具备提交用户裁决的条件。节点报告获接受后只解锁获授权的后续节点。最终全链条报告获接受后才可进入 Runtime Finish。新运行、代码、Spec、Plan、Task MD 或受影响结果变化会使当前报告失效，必须重新审查。

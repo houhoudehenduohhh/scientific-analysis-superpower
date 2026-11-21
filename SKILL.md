@@ -37,10 +37,10 @@ Task Review 返回 `CHANGES_REQUIRED` 或存在 Critical/Important finding 时�
 | 当前 Building Audit 已生成，但用户尚未接受或尚未在看过报告后授权运行 | **Building Audit Gate 等待** → 呈现问题、限制与 `audit_id`；按用户裁决返回 Proposal/Building 或进入 Runtime | 不修复后自行放行，不重用其他版本的审计。 |
 | Building Audit 已接受，且本次节点／步骤已获授权；该节点步骤尚未全通过 | **Runtime 步骤循环** → [运行规则](references/runtime-stage.md)、[事实记录](templates/runtime-report.md) 与 [自动步骤审查](templates/runtime-task-reviewer-prompt.md) | 按批准的无环步骤图执行、独立审查及最多五轮运行条件修复；未通过的步骤不解锁下游。需改代码或科学方案时分别返回 Building／Proposal。 |
 | 当前节点步骤均通过，尚无该节点正式审计 | **节点 Runtime Audit** → [审查规则](references/runtime-audit.md)、[独立 Reviewer](templates/runtime-auditor-prompt.md) 与 [报告模板](templates/runtime-audit-report.md) | 整体初审、最多一次允许范围内集中修复及复审后形成绑定节点 `run_hash` 的正式报告；**停在节点用户门禁**。 |
-| 当前节点正式审计已生成，用户尚未接受对应 `runtime_audit_id` 与 `run_hash` | **节点门禁等待** → 呈现节点完成与未验证范围，按用户裁决路由 | 不自动推进依赖节点，不扩大原运行授权。 |
+| 当前节点正式审计已生成，用户尚未接受当前节点报告 | **节点门禁等待** → 呈现节点完成与未验证范围，按用户裁决路由 | 不自动推进依赖节点，不扩大原运行授权。 |
 | 前置节点已接受，但下一节点未在用户授权范围内 | **运行授权等待** → 呈现已接受节点、下一节点及所需运行范围 | 不启动新节点；接受旧审计不能替代新的运行授权。 |
 | 全部节点审计均获接受、计划目标完成，尚无有效全链条审计 | **最终 Runtime Audit** → [审查规则](references/runtime-audit.md)、[独立 Reviewer](templates/runtime-auditor-prompt.md) 与 [报告模板](templates/runtime-audit-report.md) | 核对已接受节点哈希链、跨节点接口和最终科学结果，形成绑定 `chain_hash` 的独立正式报告；**停在最终用户门禁**。 |
-| 最终全链条审计已生成但用户尚未接受 `runtime_audit_id` 与 `chain_hash` | **最终门禁等待** → 呈现结论、限制与返回建议 | 不交付，也不沿用旧版本的接受。 |
+| 最终全链条审计已生成但用户尚未接受当前最终报告 | **最终门禁等待** → 呈现结论、限制与返回建议 | 不交付，也不沿用旧版本的接受。 |
 | 最终全链条审计已获接受，结果仍对应被审 `chain_hash` | **Runtime Finish** → [交付规则](references/runtime-finish.md) 与 [交付模板](templates/runtime-finish-report.md) | 只整理已审结果、复现信息与解释限制；交付后完成本功能单元。 |
 
 SDD 在任务全部完成后执行整体 Review。初审及最多一次自动修复、复审属于 Building Audit 形成前的内部证据，不设正式 `audit_id`；只有含任务验收索引的最终报告写入 `audits/building/` 后才触发用户门禁，**必须停在该报告，不能顺延 Runtime**。已有正式报告且用户裁决仍为 `pending` 时，不得借用自动修复规则继续返工。会话中断时依据 SDD 账本恢复未完成的审查，不重做已完成任务。
@@ -49,8 +49,8 @@ SDD 在任务全部完成后执行整体 Review。初审及最多一次自动修
 
 - **Spec Gate：**批准当前 Build Plan 和拟执行的 Task MD 版本；没有批准，不进入 Building。
 - **Building Audit Gate：**当前报告为 `PASS` 或用户明确接受限制的 `PASS_WITH_NOTES`；`audit_user_decision=accepted`、`accepted_audit_id=audit_id`，且用户在看到报告后的后续消息明确授权运行。代码提交、Spec、Plan 或受审 Task MD 变化时重审；受影响的旧授权失效。
-- **Runtime 节点门禁：**每个 Build Plan 验收节点的正式报告为 `PASS` 或用户明确接受限制的 `PASS_WITH_NOTES`；用户接受对应 `runtime_audit_id` 和节点 `run_hash` 后，才解锁获授权的依赖节点。自动步骤审查无需逐项人工批准。
-- **最终 Runtime Audit Gate：**全部节点获接受后另审全链条；当前报告为 `PASS` 或用户明确接受限制的 `PASS_WITH_NOTES`，用户接受其 `runtime_audit_id` 与 `chain_hash` 后才可 Runtime Finish。新运行或受影响结果变更时重审。
+- **Runtime 节点门禁：**每个 Build Plan 验收节点的正式报告为 `PASS` 或用户明确接受限制的 `PASS_WITH_NOTES`；用户接受当前节点审计报告后才解锁获授权的依赖节点。Harness 用审计编号和节点指纹绑定该裁决。自动步骤审查无需逐项人工批准。
+- **最终 Runtime Audit Gate：**全部节点获接受后另审全链条；当前报告为 `PASS` 或用户明确接受限制的 `PASS_WITH_NOTES`，用户接受当前最终审计报告后才可 Runtime Finish。Harness 用审计编号和全链条指纹绑定该裁决。新运行或受影响结果变更时重审。
 
 ## 返工路由与总规则
 
