@@ -5,13 +5,9 @@
 ## 1. 审查对象
 
 - 功能单元及本轮审查目的：
-- Build Plan 路径、SHA-256、批准状态：
-- 受审 Task MD、完整任务 ID、指纹及批准状态：
-- 代码仓库、基线 `BASE`、待审 `HEAD`、完整差异范围：
-- `code_commit: <完整 HEAD>`
-- `build_plan_sha256: <Build Plan 指纹>`
-- `task_specs: {}`（填写完整任务 ID 到 SHA-256 的 JSON 对象）
-- `contract_sha256: <Runtime 合同指纹或 null>`
+- Build Plan 路径及批准状态：
+- 受审 Task MD、完整任务 ID 及批准状态：
+- 代码仓库、基线和受审版本说明：
 - 源数据身份、资格证据、任务 Review/Re-review、测试和 smoke 证据：
 - Reviewer、审查日期：
 - `audit_id: <当前审计 ID>`

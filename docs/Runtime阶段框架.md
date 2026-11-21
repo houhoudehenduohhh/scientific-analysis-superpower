@@ -209,7 +209,7 @@ audits/runtime/
 └── runtime_audit_<node 或 final_chain>_<sequence>_<date>.md
 ```
 
-节点 Runtime Audit 生成后必须停止，等待用户接受当前 `runtime_audit_id` 和 `run_hash`。
+节点 Runtime Audit 生成后必须停止，等待用户接受当前报告。Harness 用审计编号和范围指纹绑定裁决。
 
 ## 九、最终全链条 Runtime Audit
 

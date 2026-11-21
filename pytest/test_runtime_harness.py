@@ -322,7 +322,8 @@ class Scenario:
         assessment = overrides.get("assessment", "PASS")
         count = len(list((self.root / "audits/runtime").glob("*.md"))) + 1
         fields = {"audit_scope": binding["audit_scope"], "runtime_audit_id": binding["audit_id"],
-                  hash_label: binding["scope_hash"], "runtime_audit_status": assessment,
+                  hash_label: binding["scope_hash"], "accepted_run_hash": "null", "accepted_chain_hash": "null",
+                  "runtime_audit_status": assessment,
                   "return_stage": overrides.get("route") or "none",
                   "limitations": json.dumps(overrides.get("limitations", [])), **(report_fields or {})}
         report_text = AUDIT_TEMPLATE.read_text(encoding="utf-8")
@@ -381,7 +382,8 @@ def test_runtime_attachments_are_local_but_bound_scientific_input_can_be_externa
     assert attempt["inputs"]["source"]["path"] == str(external_data.resolve())
 
 
-def test_runtime_lifecycle_requires_independent_review_and_distinct_user_gates(scenario):
+@pytest.mark.parametrize("hash_free_finish", [False, True])
+def test_runtime_lifecycle_requires_independent_review_and_distinct_user_gates(scenario, hash_free_finish):
     scenario.cli("runtime-run", "S1", "--actor", "executor", denied="Runtime has not been initialized")
     scenario.initialize()
     scenario.run("S1", denied="not authorized")
@@ -416,12 +418,12 @@ def test_runtime_lifecycle_requires_independent_review_and_distinct_user_gates(s
     scope = scenario.cli("runtime-scope", "final_chain")
     identities = [value for node in scope["nodes"] for value in (node["audit_id"], node["run_hash"])]
     results = [record["path"] for outputs in scope["outputs"].values() for record in outputs.values()]
-    scenario.file("reports/runtime_finish.md", "\n".join([
-        "## 当前状态与追溯", "## 结果概览", "## 已审结果清单", "## 关键发现与限制", "## 复现与交付核对",
-        final["scope_hash"], final["audit_id"], *identities, *results,
-    ]))
+    report = ("## 阶段性结果\n\n计数为三。\n\n## 结果局限\n\n仅为测试数据。\n" if hash_free_finish
+              else "\n".join(["## 当前状态与追溯", "## 结果概览", "## 已审结果清单", "## 关键发现与限制",
+                                "## 复现与交付核对", final["scope_hash"], final["audit_id"], *identities, *results]))
+    scenario.file("reports/runtime_finish.md", report)
     assert scenario.cli("runtime-finish", "--artifact", finish)["status"] == "runtime_finished"
-    assert final["scope_hash"] in finish.read_text(encoding="utf-8")
+    assert (final["scope_hash"] in finish.read_text(encoding="utf-8")) == (not hash_free_finish)
 
 
 def test_runtime_rejects_legacy_transition_and_stale_or_unscoped_authority(scenario):

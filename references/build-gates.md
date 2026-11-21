@@ -21,4 +21,4 @@ Final Review 通过且用户接受通过的 Building Audit → runtime-init → 
 
 当前 Build Plan、已批准 Task MD、SDD 账本、每个已执行 Task 的 brief、实现报告、提交范围、Task Review/Re-review、Final Review 和正式 Building Audit。报告必须绑定当前 Build Plan、Task MD 与代码提交身份。第 6 节逐条覆盖已批准任务与 AC，说明成功条件、判定、实际验证和未验证范围。Building gate 核对批准的主入口路径和审查基线到 HEAD 的新增脚本。
 
-交接 Runtime 前，使用 `gate --artifact <Git工作树根目录> --evidence <Building门禁证据.json>` 登记证据。JSON 提供 `ledger`（`progress.md`）和 `tasks`（完整任务 ID 到含 `brief` 路径的对象的映射）。Harness 将这些文件与状态中已有的任务审查、整体审查和正式报告绑定。后续命令见 [Runtime Harness](sdd-harness.md#runtime-命令)。
+交接 Runtime 前，使用 `gate --artifact <Git工作树根目录> --evidence <Building门禁证据.json>` 登记证据。JSON 提供 `ledger`（`progress.md`）和 `tasks`（完整任务 ID 到含 `brief` 路径的对象的映射）。协调者另在同一 JSON 的 `audit_binding` 中记录独立审计对应的 `report_sha256` 和 `contract_sha256`。无拟交接合同时填写 `null`。Harness 将这些字段连同任务、计划及受审提交写入现有 Manifest。后续命令见 [Runtime Harness](sdd-harness.md#runtime-命令)。

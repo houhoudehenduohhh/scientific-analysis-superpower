@@ -639,6 +639,16 @@ def record_building_gate(state, root, evidence_path, verify_report_layout, *, ev
         sdd_layout.verify_acceptance_index(audit_text, plan_path)
     final_review = verify_overall_review(state, state["evidence"].get("building_audit_pending", []),
                                          commit, audit=audit)
+    audit_binding = None
+    if "audit_binding" in data:
+        audit_binding = objects(data["audit_binding"], "Building audit binding")
+        report_sha256 = matches(audit_binding.get("report_sha256"), SHA256, "Building Audit report SHA-256")
+        require(report_sha256 == audit[0]["sha256"], "Building Audit report fingerprint mismatch")
+        verify_file(audit[0])
+        contract_sha256 = audit_binding.get("contract_sha256")
+        if contract_sha256 is not None:
+            matches(contract_sha256, SHA256, "Building Audit Runtime contract SHA-256")
+        audit_binding = {"report_sha256": report_sha256, "contract_sha256": contract_sha256}
     files = [receipt, fingerprint(ledger), final_review]
     role_records = [*audit, final_review]
     task_bases = []
@@ -709,6 +719,7 @@ def record_building_gate(state, root, evidence_path, verify_report_layout, *, ev
         "code_root": str(root), "code_commit": commit, "files": files,
         "build_plan": state["refs"]["build_plan"], "audit": audit,
         "task_specs": {key: value["task_spec_sha256"] for key, value in state["tasks"].items()},
+        **({"audit_binding": audit_binding} if audit_binding is not None else {}),
     }
 
 
@@ -805,9 +816,15 @@ class Runtime:
                 "Building Audit requires current audit_id acceptance")
         for field in ("code_commit", "build_plan_sha256", "task_specs"):
             require(evidence.get(field) == contract[field], f"Building Audit binding mismatch: {field}")
-            markdown_field(report_text, field, contract[field], json_value=field == "task_specs")
         require(evidence.get("contract_sha256") == contract_ref["sha256"], "approved Runtime contract fingerprint mismatch")
-        markdown_field(report_text, "contract_sha256", contract_ref["sha256"])
+        audit_binding = self.state["building_gate"].get("audit_binding")
+        if audit_binding is None:
+            for field in ("code_commit", "build_plan_sha256", "task_specs"):
+                markdown_field(report_text, field, contract[field], json_value=field == "task_specs")
+            markdown_field(report_text, "contract_sha256", contract_ref["sha256"])
+        else:
+            require(audit_binding == {"report_sha256": reports[0]["sha256"], "contract_sha256": contract_ref["sha256"]},
+                    "Building Audit manifest bindings differ from the current report or Runtime contract")
         limits = validate_limits(evidence)
         markdown_field(report_text, "limitations", limits, json_value=True)
         require(evidence.get("accepted_limitations") == limits, "Building Audit limitations require explicit acceptance")
@@ -1267,11 +1284,15 @@ class Runtime:
         if self.runtime_root is not None:
             nodes = self.nodes if name == "final_chain" else [name]
             verify_runtime_index(report_content, nodes, {step: self.steps[step] for step in relevant})
+        if "report_sha256" in audit:
+            require(audit["report_sha256"] == report_record["sha256"], "Runtime Audit report fingerprint mismatch")
+        else:
+            markdown_field(report_content, "chain_hash" if name == "final_chain" else "run_hash", scope["scope_hash"])
+            markdown_field(report_content, "accepted_run_hash", "null")
+            markdown_field(report_content, "accepted_chain_hash", "null")
         for field, value in [("audit_scope", scope["audit_scope"]), ("runtime_audit_id", scope["audit_id"]),
-                             ("chain_hash" if name == "final_chain" else "run_hash", scope["scope_hash"]),
                              ("runtime_audit_status", verdict), ("audit_user_decision", "pending"),
-                             ("return_stage", audit["route"] or "none"), ("accepted_runtime_audit_id", "null"),
-                             ("accepted_run_hash", "null"), ("accepted_chain_hash", "null")]:
+                             ("return_stage", audit["route"] or "none"), ("accepted_runtime_audit_id", "null")]:
             markdown_field(report_content, field, value)
         markdown_field(report_content, "limitations", limits, json_value=True)
         audit_record = {
@@ -1647,13 +1668,13 @@ class Runtime:
         report = inside(self.root, args.artifact, "reports")
         require(report.suffix.lower() == ".md", "Runtime Finish must be Markdown")
         content = report.read_text(encoding="utf-8")
-        if self.runtime_root is not None:
-            lines = list(markdown_lines_outside_code(content.splitlines()))
-            headings = [(index, line.strip()) for index, line in enumerate(lines) if re.match(r" {0,3}#{1,6}[ \t]+", line)]
-            if headings and headings[0][1].startswith("# "):
-                headings = headings[1:]
-            require([heading for _, heading in headings] == ["## 阶段性结果", "## 结果局限"],
-                    "Runtime Finish requires exactly the sections 阶段性结果 and 结果局限")
+        lines = list(markdown_lines_outside_code(content.splitlines()))
+        headings = [(index, line.strip()) for index, line in enumerate(lines) if re.match(r" {0,3}#{1,6}[ \t]+", line)]
+        if headings and headings[0][1].startswith("# "):
+            headings = headings[1:]
+        current_layout = [heading for _, heading in headings] == ["## 阶段性结果", "## 结果局限"]
+        if self.runtime_root is not None or current_layout:
+            require(current_layout, "Runtime Finish requires exactly the sections 阶段性结果 and 结果局限")
             first, second = [index for index, _ in headings]
             require(any(line.strip() for line in lines[first + 1:second]) and any(line.strip() for line in lines[second + 1:]),
                     "Runtime Finish sections require a result and its limitations")

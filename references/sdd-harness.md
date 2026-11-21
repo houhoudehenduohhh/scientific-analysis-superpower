@@ -75,7 +75,7 @@ python <Harness路径> init <WORKTREE>/.tmp/sdd/<计划名>/state.json --build-p
 
 Building 交接记录将 `audit_id`、`report_sha256`、`assessment`、代码与规格指纹、`contract_sha256`、`spec_approval_ref`、`report_presented_at`、`accepted_at`、`acceptance_ref` 和已接受限制关联起来。单独登记运行授权的 `audit_id`、`contract_sha256`、`authorized_at`、`user_message_ref`、`steps`。用户在看过 Building Audit 之后，可在一条消息中分别表达接受和运行授权。
 
-步骤审查 JSON 使用 `step_run_hash`、`reviewer`、`verdict`、逐 AC 的 `acs`、`route`、`report`。正式审计登记使用 `scope_hash`、`auditor`、`assessment`、`report`、`limitations`、`route`；用户接受使用 `audit_id`、`scope_hash`、`accepted_at`、`user_message_ref`、`accepted_limitations`。成功裁决的 `route` 为 `null`。接受记录独立保留，登记后的审计 Markdown 保持原样。
+步骤审查 JSON 使用 `step_run_hash`、`reviewer`、`verdict`、逐 AC 的 `acs`、`route`、`report`。正式审计登记使用 `scope_hash`、`auditor`、`assessment`、`report`、`report_sha256`、`limitations`、`route`；用户接受使用 `audit_id`、`scope_hash`、`accepted_at`、`user_message_ref`、`accepted_limitations`。成功裁决的 `route` 为 `null`。接受记录独立保留，登记后的审计 Markdown 保持原样。
 
 正式审计等待裁决期间可以只读查询状态和审查范围。唯一能推进状态的命令是针对当前审计且身份匹配的 `runtime-accept` 或 `runtime-return`。另一独立节点即使已就绪也须等当前裁决。
 
