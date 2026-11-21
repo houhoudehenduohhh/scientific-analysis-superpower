@@ -120,11 +120,13 @@ digraph process {
 
 ## Setup
 
-Ensure the work happens in an isolated workspace: use
-[using-git-worktrees](../using-git-worktrees/SKILL.md) to create one or verify the existing one.
-When reading that Skill, use only its workspace-detection, worktree-creation,
-Git-ignore, and clean-baseline instructions. Do not inject its explanatory
-examples or cleanup discussion into Implementer or Reviewer prompts.
+Use the functional-unit Git root declared in the approved Build Plan. Before preparing
+a workspace, check for an existing Harness state in its registered worktrees and resume
+that exact workspace. Implementers, reviewers and repairs share the bound workspace.
+If the user explicitly approves a linked worktree at an exact path, use
+[the Harness worktree setup](../../references/sdd-harness.md#功能单元-git-初始化).
+Use pytest's managed temp location, or put a custom basetemp under this plan's SDD
+workspace using a fresh run directory.
 Never start implementation on a main/master branch without your human
 partner's explicit consent.
 

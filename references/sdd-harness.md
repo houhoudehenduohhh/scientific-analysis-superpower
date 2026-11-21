@@ -36,7 +36,7 @@ Building 默认在获批功能单元上运行以下命令，其中 `WORKTREE` �
 python <Harness路径> init <WORKTREE>/.tmp/sdd/<计划名>/state.json --build-plan <PLAN> --evidence <批准记录.json>
 ```
 
-若需要先创建隔离 worktree，先用 `prepare-git <PLAN> --evidence <批准记录.json>` 建立功能单元基线，再按 worktree 规则准备独立工作树。将 `init` 的状态路径指向该工作树下的 `.tmp/sdd/<计划名>/state.json`，并传入 `--worktree <WORKTREE>`。Build Plan、Task MD 和批准记录仍引用获批目录中的原文件。实现和测试需要的文件应先核对是否已包含在工作树基线中。每个计划使用一处状态目录。
+先用 `git worktree list` 检查此计划是否已有初始化状态。已有状态时按原路径恢复。用户明确批准隔离工作树和完整绝对路径后，在 Spec 批准 JSON 中登记 `worktree_path`。如需建立基线，用 `prepare-git <PLAN> --evidence <批准记录.json>`，然后在该路径准备同仓库的 Git 工作树。将 `init` 的状态路径指向该工作树下的 `.tmp/sdd/<计划名>/state.json`。若传入 `--worktree`，必须与批准路径一致。Build Plan、Task MD 和批准记录仍使用功能单元中的原文件。
 
 旧计划若已有 Harness 状态，且计划的路径和指纹与状态记录一致，可沿用原工作区续跑。首次初始化使用包含功能单元 Git 根目录的获批计划。
 
