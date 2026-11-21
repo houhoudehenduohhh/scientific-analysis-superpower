@@ -39,11 +39,12 @@ Task Review 返回 `CHANGES_REQUIRED` 或存在 Critical/Important finding 时�
 | 当前节点步骤均通过，尚无该节点正式审计 | **节点 Runtime Audit** → [审查规则](references/runtime-audit.md)、[独立 Reviewer](templates/runtime-auditor-prompt.md) 与 [报告模板](templates/runtime-audit-report.md) | 整体初审、最多一次允许范围内集中修复及复审后形成绑定节点 `run_hash` 的正式报告；**停在节点用户门禁**。 |
 | 当前节点正式审计已生成，用户尚未接受当前节点报告 | **节点门禁等待** → 呈现节点完成与未验证范围，按用户裁决路由 | 不自动推进依赖节点，不扩大原运行授权。 |
 | 前置节点已接受，但下一节点未在用户授权范围内 | **运行授权等待** → 呈现已接受节点、下一节点及所需运行范围 | 不启动新节点；接受旧审计不能替代新的运行授权。 |
+| 当前建设批次的节点均获接受，计划还有后续批次 | **下一建设批次** → [批次交接](references/sdd-harness.md#建设批次) | 保存本批已验收证据，进入下一批 Proposal 和 Spec Gate。 |
 | 全部节点审计均获接受、计划目标完成，尚无有效全链条审计 | **最终 Runtime Audit** → [审查规则](references/runtime-audit.md)、[独立 Reviewer](templates/runtime-auditor-prompt.md) 与 [报告模板](templates/runtime-audit-report.md) | 核对已接受节点哈希链、跨节点接口和最终科学结果，形成绑定 `chain_hash` 的独立正式报告；**停在最终用户门禁**。 |
 | 最终全链条审计已生成但用户尚未接受当前最终报告 | **最终门禁等待** → 呈现结论、限制与返回建议 | 不交付，也不沿用旧版本的接受。 |
 | 最终全链条审计已获接受，结果仍对应被审 `chain_hash` | **Runtime Finish** → [交付规则](references/runtime-finish.md) 与 [交付模板](templates/runtime-finish-report.md) | 只整理已审结果、复现信息与解释限制；交付后完成本功能单元。 |
 
-SDD 在任务全部完成后执行整体 Review。初审及最多一次自动修复、复审属于 Building Audit 形成前的内部证据，不设正式 `audit_id`；只有含任务验收索引的最终报告写入 `audits/building/` 后才触发用户门禁，**必须停在该报告，不能顺延 Runtime**。已有正式报告且用户裁决仍为 `pending` 时，不得借用自动修复规则继续返工。会话中断时依据 SDD 账本恢复未完成的审查，不重做已完成任务。
+SDD 在当前建设范围内的任务全部完成后执行整体 Review。初审及最多一次自动修复、复审属于 Building Audit 形成前的内部证据，不设正式 `audit_id`；只有含任务验收索引的最终报告写入 `audits/building/` 后才触发用户门禁，**必须停在该报告，不能顺延 Runtime**。已有正式报告且用户裁决仍为 `pending` 时，不得借用自动修复规则继续返工。会话中断时依据 SDD 账本恢复未完成的审查，不重做已完成任务。
 
 ## 用户门禁
 

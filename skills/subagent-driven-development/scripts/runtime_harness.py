@@ -16,7 +16,7 @@ from pathlib import Path, PurePosixPath
 COMMANDS = {
     "runtime-init", "runtime-authorize", "runtime-run", "runtime-review",
     "runtime-report", "runtime-scope", "runtime-audit", "runtime-accept", "runtime-audit-repair",
-    "runtime-return", "runtime-interrupt", "runtime-finish", "runtime-status",
+    "runtime-return", "runtime-interrupt", "runtime-finish", "runtime-status", "runtime-next-batch",
 }
 PASS = {"PASS", "PASS_WITH_NOTES"}
 FAIL = {"CHANGES_REQUIRED", "BLOCKED"}
@@ -37,6 +37,39 @@ LOADER_ENV_KEYS = {"CLASSPATH", "JAVA_HOME", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS
 def require(condition, message):
     if not condition:
         raise SystemExit(message)
+
+
+def runtime_message_refs(run, *, include_building_acceptance=True):
+    binding = run["building_audit"]["binding"]
+    refs = {binding["spec_approval_ref"]}
+    if include_building_acceptance:
+        refs.add(binding["acceptance_ref"])
+    refs.update(entry["approval"]["user_message_ref"] for entry in run["authorizations"])
+    refs.update(entry["decision"]["user_message_ref"] for entry in run["return_decisions"])
+    refs.update(audit["acceptance"]["user_message_ref"]
+                for audit in [*run["audits"].values(), *run["archived_audits"]]
+                if audit.get("acceptance"))
+    return refs
+
+
+def earlier_batched_run_message_refs(state, batch_id):
+    if batch_id is None:
+        return set()
+    return {ref for run in state.get("runtime_history", [])
+            for ref in runtime_message_refs(run)}
+
+
+def require_fresh_batch_message_ref(state, batch_id, message_ref, role, *, include_building_acceptance=True):
+    if batch_id is None:
+        return
+    require(message_ref not in earlier_batched_run_message_refs(state, batch_id),
+            f"{role} message already used by an earlier batch or Runtime cycle")
+    run = state.get("runtime")
+    if run is None:
+        used_refs = {state["spec_approval"]["user_message_ref"]}
+    else:
+        used_refs = runtime_message_refs(run, include_building_acceptance=include_building_acceptance)
+    require(message_ref not in used_refs, f"{role} message already used in the current batch")
 
 
 def now():
@@ -130,16 +163,18 @@ def file_binding(root, value):
     return result
 
 
-def graph_order(graph, label):
+def graph_order(graph, label, *, previous=()):
     pending = {key: set(names(value.get("needs"), f"{label} dependencies")) for key, value in graph.items()}
     ordered = []
+    satisfied = set(previous)
     while pending:
-        ready = sorted(key for key, needs in pending.items() if needs <= set(ordered))
+        ready = sorted(key for key, needs in pending.items() if needs <= satisfied)
         if not ready:
-            unknown = set().union(*pending.values()) - graph.keys()
+            unknown = set().union(*pending.values()) - graph.keys() - satisfied
             require(not unknown, f"unknown {label} dependency: {sorted(unknown)}")
             raise SystemExit(f"{label} dependency cycle")
         ordered.extend(ready)
+        satisfied.update(ready)
         for key in ready:
             del pending[key]
     return ordered
@@ -194,15 +229,18 @@ def verify_code(root, commit):
             "tracked worktree changes; return to Building")
 
 
-def markdown_value(content, key, *, json_value=False):
+def markdown_value(content, key, *, json_value=False, default=...):
     values = re.findall(r"^[ \t]*(?:-[ \t]+)?`?" + re.escape(key) + r"`?[ \t]*[:：][ \t]*(.*?)`?[ \t]*$",
                         content, flags=re.MULTILINE)
+    if not values and default is not ...:
+        return default
     require(len(values) == 1, f"Markdown must declare exactly one {key}")
     return json.loads(values[0], object_pairs_hook=json_object) if json_value else values[0]
 
 
-def markdown_field(content, key, expected, *, json_value=False):
-    require(markdown_value(content, key, json_value=json_value) == expected,
+def markdown_field(content, key, expected, *, json_value=False, allow_missing=False):
+    default = expected if allow_missing else ...
+    require(markdown_value(content, key, json_value=json_value, default=default) == expected,
             f"Markdown {key} differs from bound evidence")
 
 
@@ -225,7 +263,25 @@ def plan_ids(cell):
     return {matches(value, ID, "approved Runtime graph identifier") for value in values if value}
 
 
-def verify_plan_graph(content, nodes, steps):
+def verify_plan_graph(content, nodes, steps, batch_id=None):
+    if batch_id is not None:
+        from sdd_layout import batch_plan
+
+        layout = batch_plan(content)
+        batch = layout["batches"][batch_id]
+        require(batch["nodes"] == nodes.keys() and batch["steps"] == steps.keys(),
+                "contract IDs differ from the approved Building batch")
+        for node, spec in nodes.items():
+            require(set(spec["needs"]) == layout["nodes"][node]["needs"],
+                    f"node {node} differs from approved Runtime graph")
+        for step, spec in steps.items():
+            expected = layout["steps"][step]
+            require(expected["task"] == spec["task_id"]
+                    and step in layout["nodes"][spec["node"]]["steps"]
+                    and expected["needs"] & layout["steps"].keys() == set(spec["needs"])
+                    and expected["needs"] & layout["nodes"].keys() <= set(nodes[spec["node"]]["needs"]),
+                    f"step {step} differs from approved Runtime graph")
+        return
     plan_steps = plan_table(content, "Runtime 执行图", 6)
     plan_nodes = plan_table(content, "阶段性验收节点", 6)
     require({row[0] for row in plan_steps} == steps.keys() and {row[0] for row in plan_nodes} == nodes.keys(),
@@ -312,7 +368,7 @@ def step_environment(step, code_files):
     return result
 
 
-def verified_contract(contract, state):
+def verified_contract(contract, state, *, previous_nodes=None, previous_steps=None):
     matches(contract.get("run_id"), ID, "run ID")
     root = Path(text(contract.get("code_root"), "code_root")).resolve(strict=True)
     if state.get("git"):
@@ -339,8 +395,11 @@ def verified_contract(contract, state):
     for name, step in steps.items():
         matches(name, ID, "step ID")
         objects(step, "step")
-    node_order = graph_order(nodes, "node")
-    step_order = graph_order(steps, "step")
+    all_steps = {**(previous_steps or {}), **steps}
+    require(not nodes.keys() & (previous_nodes or {}).keys() and not steps.keys() & (previous_steps or {}).keys(),
+            "contract IDs overlap a completed Building batch")
+    node_order = graph_order(nodes, "node", previous=previous_nodes or ())
+    step_order = graph_order(steps, "step", previous=previous_steps or ())
     plan = Path(state["refs"]["build_plan"]["path"]).read_text(encoding="utf-8")
     markdown_field(plan, "decision", "approved")
     tracked_paths = git(root, "ls-tree", "-r", "-z", "--name-only", commit).split("\0")
@@ -358,7 +417,7 @@ def verified_contract(contract, state):
             require(re.search(r"(?<![\w-])" + re.escape(ac) + r"(?![\w-])", spec),
                     f"AC {ac} not found in bound Task MD")
         for upstream in step["needs"]:
-            dependency_node = steps[upstream].get("node")
+            dependency_node = all_steps[upstream].get("node")
             require(dependency_node == node or dependency_node in nodes[node]["needs"],
                     f"step {name} has undeclared cross-node prerequisite {upstream}")
         require(set(names(step.get("inputs"), "step inputs")) <= inputs.keys(), f"unknown input for {name}")
@@ -373,7 +432,7 @@ def verified_contract(contract, state):
         require(executable.is_absolute() and executable.is_file() and executable.resolve().suffix.lower() not in {".cmd", ".bat"},
                 f"command for {name} requires an absolute executable path")
         executables[name] = file_binding(root, {"path": command[0], "sha256": step.get("executable_sha256")})
-        available = substitutions(step, steps)
+        available = substitutions(step, all_steps)
         for arg in command:
             require(not re.fullmatch(r"\{(?:config\}|(?:input|output|output-dir|upstream|code):.*\})", arg)
                     or arg in available, f"unapproved argument reference {arg}")
@@ -390,7 +449,7 @@ def verified_contract(contract, state):
         step_environment(step, code_files[name])
     for node in nodes:
         require(any(step["node"] == node for step in steps.values()), f"no steps declared for node {node}")
-    verify_plan_graph(plan, nodes, steps)
+    verify_plan_graph(plan, nodes, steps, state.get("spec_approval", {}).get("batch_id"))
     return root, node_order, step_order, executables, code_files
 
 
@@ -495,6 +554,9 @@ def verify_building_gate(gate, state, root, commit):
             "Building gate evidence has changed")
     verify_overall_review(state, state["evidence"].get("building_audit_pending", []), commit,
                           audit=gate["audit"], for_runtime=True)
+    if gate.get("audit_binding") is not None:
+        verify_building_report_bindings(
+            gate["audit"][0], gate["audit_binding"], commit, gate["build_plan"]["sha256"], gate["task_specs"])
 
 
 def overall_review_metadata(content):
@@ -607,6 +669,22 @@ def verify_overall_review(state, records, commit, *, audit=None, for_runtime=Fal
     return review
 
 
+def verify_building_report_bindings(report, binding, commit, build_plan_sha256, task_specs):
+    require(binding["report_sha256"] == report["sha256"], "Building Audit report fingerprint mismatch")
+    path = Path(report["path"])
+    require(path.is_file() and path.resolve() == path, f"fingerprint changed: {path}")
+    content = path.read_bytes()
+    require(hashlib.sha256(content).hexdigest() == report["sha256"], f"fingerprint changed: {path}")
+    # Recognize the same declarations as the legacy gate, including nested list entries.
+    report_text = "\n".join(content.decode("utf-8-sig").splitlines())
+    fields = (
+        ("code_commit", commit), ("build_plan_sha256", build_plan_sha256),
+        ("task_specs", task_specs), ("contract_sha256", binding["contract_sha256"] or "null"),
+    )
+    for field, expected in fields:
+        markdown_field(report_text, field, expected, json_value=field == "task_specs", allow_missing=True)
+
+
 def record_building_gate(state, root, evidence_path, verify_report_layout, *, evidence_root=None):
     import sdd_layout
     import sdd_unit_git as unit_git
@@ -622,9 +700,9 @@ def record_building_gate(state, root, evidence_path, verify_report_layout, *, ev
     ledger_text = ledger.read_text(encoding="utf-8")
     tasks = objects(data.get("tasks"), "Building gate tasks", nonempty=True)
     require(tasks.keys() == state["tasks"].keys(), "Building gate requires evidence per registered task")
+    task_specs = {key: task["task_spec_sha256"] for key, task in state["tasks"].items()}
     if state.get("spec_approval"):
-        require(state["spec_approval"]["task_specs"] ==
-                {key: task["task_spec_sha256"] for key, task in state["tasks"].items()},
+        require(state["spec_approval"]["task_specs"] == task_specs,
                 "Building gate requires every Task in the current Spec approval")
     audit = state["evidence"].get("building_audit", [])
     require(len(audit) == 1, "Building gate requires current formal Building Audit")
@@ -633,22 +711,29 @@ def record_building_gate(state, root, evidence_path, verify_report_layout, *, ev
     audit_text = report.read_text(encoding="utf-8")
     plan_path = Path(state["refs"]["build_plan"]["path"])
     structured = sdd_layout.structured_plan(plan_path.read_text(encoding="utf-8"))
+    task_ids = tasks.keys() if state.get("spec_approval", {}).get("batch_id") else None
     if structured:
         require(report.parent == root / "audits" / "building" and report.suffix == ".md",
                 "formal Building Audit must be Markdown directly in audits/building")
-        sdd_layout.verify_acceptance_index(audit_text, plan_path)
+        sdd_layout.verify_acceptance_index(audit_text, plan_path, task_ids=task_ids)
     final_review = verify_overall_review(state, state["evidence"].get("building_audit_pending", []),
                                          commit, audit=audit)
     audit_binding = None
     if "audit_binding" in data:
         audit_binding = objects(data["audit_binding"], "Building audit binding")
         report_sha256 = matches(audit_binding.get("report_sha256"), SHA256, "Building Audit report SHA-256")
-        require(report_sha256 == audit[0]["sha256"], "Building Audit report fingerprint mismatch")
-        verify_file(audit[0])
-        contract_sha256 = audit_binding.get("contract_sha256")
+        require("contract_sha256" in audit_binding, "Building audit binding requires contract_sha256")
+        contract_sha256 = audit_binding["contract_sha256"]
         if contract_sha256 is not None:
             matches(contract_sha256, SHA256, "Building Audit Runtime contract SHA-256")
         audit_binding = {"report_sha256": report_sha256, "contract_sha256": contract_sha256}
+    previous_gate = state.get("building_gate")
+    if previous_gate and previous_gate["audit"][0]["sha256"] == audit[0]["sha256"]:
+        require(previous_gate.get("audit_binding") == audit_binding,
+                "a recorded Building Audit cannot change its Runtime contract binding")
+    if audit_binding is not None:
+        verify_building_report_bindings(audit[0], audit_binding, commit, state["refs"]["build_plan"]["sha256"],
+                                        task_specs)
     files = [receipt, fingerprint(ledger), final_review]
     role_records = [*audit, final_review]
     task_bases = []
@@ -714,11 +799,11 @@ def record_building_gate(state, root, evidence_path, verify_report_layout, *, ev
         if baseline:
             git(root, "merge-base", "--is-ancestor", baseline, commit)
             task_bases.append(baseline)
-        sdd_layout.verify_building_paths(root, plan_path, task_bases, commit)
+        sdd_layout.verify_building_paths(root, plan_path, task_bases, commit, task_ids=task_ids)
     return {
         "code_root": str(root), "code_commit": commit, "files": files,
         "build_plan": state["refs"]["build_plan"], "audit": audit,
-        "task_specs": {key: value["task_spec_sha256"] for key, value in state["tasks"].items()},
+        "task_specs": task_specs,
         **({"audit_binding": audit_binding} if audit_binding is not None else {}),
     }
 
@@ -734,6 +819,8 @@ class Runtime:
         self.requested_losses = set()
         self.observed_losses = {}
         self.retired_losses = {}
+        self.previous_nodes = {}
+        self.previous_steps = {}
         self.data = state.get("runtime")
         self.runtime_root = None
         if self.data:
@@ -749,6 +836,48 @@ class Runtime:
                     continue
                 for loss in returned.get("artifact_losses", []):
                     self.retired_losses[(loss["step_id"], loss["step_run_hash"], loss["output"])] = (returned, loss)
+
+    def verify_completed_batches(self):
+        histories = {item["run_id"]: item for item in self.state.get("building_history", [])}
+        for run in self.state.get("runtime_history", []):
+            if "batch_completed_at" not in run:
+                continue
+            history = histories[run["contract"]["run_id"]]
+            original = Runtime({**history, "git": self.state["git"], "runtime": run}, None,
+                               self.verify_report_layout, state_path=self.state_path)
+            original.previous_nodes = self.previous_nodes.copy()
+            original.previous_steps = self.previous_steps.copy()
+            snapshots = history["spec_snapshots"]
+            for record in [*snapshots.values(), history["refs"]["spec_approval"], run["contract_ref"],
+                           run["building_audit"]["receipt"], run["building_audit"]["report"]]:
+                verify_file(record)
+            require(snapshots["build-plan"]["sha256"] == run["contract"]["build_plan_sha256"]
+                    and {task: snapshots[task]["sha256"] for task in run["contract"]["task_specs"]}
+                    == run["contract"]["task_specs"], "completed batch Spec binding changed")
+            for task, snapshot in history["tasks"].items():
+                verify_file({"path": snapshot["task_spec_path"], "sha256": snapshots[task]["sha256"]})
+            verify_building_gate(history["building_gate"], original.state, original.root,
+                                 original.contract["code_commit"])
+            require(not self.previous_nodes.keys() & original.nodes.keys()
+                    and not self.previous_steps.keys() & original.steps.keys(),
+                    "duplicate IDs in completed Building batches")
+            for node in run["node_order"]:
+                original.accepted_node(node)
+                self.previous_nodes[node] = original
+            self.previous_steps.update({step: original for step in run["step_order"]})
+
+    def next_batch(self, args):
+        require(not args.value and not args.evidence and not args.artifact,
+                "runtime-next-batch uses the current accepts and takes no scope or evidence")
+        next_batch = self.data.get("next_batch")
+        require(next_batch, "no later Building batch in the approved Build Plan")
+        require(all(self.data["audits"].get(node, {}).get("acceptance") for node in self.nodes),
+                "complete and accept every current batch milestone before advancing")
+        for node in self.data["node_order"]:
+            self.accepted_node(node)
+        self.data.update(batch_completed_at=now(), return_stage="Proposal")
+        self.save("runtime-next-batch")
+        return {"status": "proposal", "next_batch": next_batch}
 
     def run_workspace(self, root, run_id):
         require(self.state_path is not None, "Runtime requires the bound state path")
@@ -781,8 +910,20 @@ class Runtime:
         require(len(reports) == 1, "one current Building Audit report must be registered")
         contract, contract_ref = self.read_attachment(args.artifact)
         evidence, receipt = self.read_attachment(args.evidence)
-        root, node_order, step_order, executables, code_files = verified_contract(contract, self.state)
+        root, node_order, step_order, executables, code_files = verified_contract(
+            contract, self.state, previous_nodes=self.previous_nodes,
+            previous_steps={step: runtime.steps[step] for step, runtime in self.previous_steps.items()},
+        )
         plan = Path(self.state["refs"]["build_plan"]["path"]).read_text(encoding="utf-8")
+        batch_id = self.state.get("spec_approval", {}).get("batch_id")
+        next_batch = None
+        if batch_id is not None:
+            layout = sdd_layout.batch_plan(plan)
+            order = list(layout["batches"])
+            remaining = order[order.index(batch_id) + 1:]
+            next_batch = remaining[0] if remaining else None
+            require(layout["batches"][batch_id]["needs"] <= self.previous_nodes.keys(),
+                    "Building batch prerequisites must have accepted Runtime milestones")
         structured = sdd_layout.structured_plan(plan)
         if structured:
             self.runtime_root = self.run_workspace(root, contract["run_id"])
@@ -828,7 +969,8 @@ class Runtime:
         limits = validate_limits(evidence)
         markdown_field(report_text, "limitations", limits, json_value=True)
         require(evidence.get("accepted_limitations") == limits, "Building Audit limitations require explicit acceptance")
-        text(evidence.get("acceptance_ref"), "Building Audit user acceptance reference")
+        acceptance_ref = text(evidence.get("acceptance_ref"), "Building Audit user acceptance reference")
+        require_fresh_batch_message_ref(self.state, batch_id, acceptance_ref, "Building Audit acceptance")
         text(evidence.get("spec_approval_ref"), "approved Build Plan and Task MD user message reference")
         presented_at = timestamp(evidence.get("report_presented_at"))
         require(timestamp(evidence.get("accepted_at")) > presented_at,
@@ -849,9 +991,15 @@ class Runtime:
                         "new Runtime cycle requires a fresh Building Audit and user acceptance")
                 distinct_file(reports[0], [previous_audit["report"]], "new Building Audit")
             prior = prior_runs[-1]
-            decision = prior["return_decisions"][-1]["decision"]
-            require(presented_at > timestamp(decision["decided_at"]) and evidence["acceptance_ref"] != decision["user_message_ref"],
-                    "new Building Audit and acceptance must follow the Runtime return decision")
+            if "batch_completed_at" in prior:
+                require(presented_at > timestamp(prior["batch_completed_at"])
+                        and all(evidence["acceptance_ref"] != audit["acceptance"]["user_message_ref"]
+                                for audit in prior["audits"].values()),
+                        "new Building Audit and acceptance must follow completion of the preceding batch")
+            else:
+                decision = prior["return_decisions"][-1]["decision"]
+                require(presented_at > timestamp(decision["decided_at"]) and evidence["acceptance_ref"] != decision["user_message_ref"],
+                        "new Building Audit and acceptance must follow the Runtime return decision")
             if prior["return_stage"] == "Building":
                 require(contract["code_commit"] != prior["contract"]["code_commit"],
                         "return to Building requires a newly audited HEAD")
@@ -867,6 +1015,8 @@ class Runtime:
         }
         if structured:
             self.state["runtime"]["published"] = {}
+        if batch_id is not None:
+            self.state["runtime"].update(batch_id=batch_id, next_batch=next_batch)
         self.save("runtime-init")
         return {"status": "runtime_authorization_pending", "run_id": contract["run_id"],
                 "contract_sha256": contract_ref["sha256"], "building_audit_id": audit_id}
@@ -880,6 +1030,8 @@ class Runtime:
         require(timestamp(approval.get("authorized_at")) >= timestamp(binding["accepted_at"]),
                 "Runtime authorization must occur at or after Building Audit acceptance")
         message_ref = text(approval.get("user_message_ref"), "Runtime authorization user message reference")
+        require_fresh_batch_message_ref(self.state, self.data.get("batch_id"), message_ref,
+                                        "Runtime authorization", include_building_acceptance=False)
         require(all(message_ref != entry["approval"]["user_message_ref"]
                     for run in self.state.get("runtime_history", []) for entry in run["authorizations"]),
                 "new Runtime cycle requires fresh scoped authorization")
@@ -972,6 +1124,8 @@ class Runtime:
         return facts
 
     def accepted_node(self, node):
+        if node in self.previous_nodes:
+            return self.previous_nodes[node].accepted_node(node)
         audit = self.data["audits"].get(node)
         require(audit and audit.get("acceptance"), f"milestone {node} not accepted")
         binding = self.scope(node)
@@ -1020,8 +1174,9 @@ class Runtime:
         upstream_nodes = {key: self.accepted_node(key) for key in self.nodes[node]["needs"]}
         dependencies = {}
         for key in step["needs"]:
-            facts = self.passed_step(key)
-            dependencies[key] = {"step_run_hash": facts["step_run_hash"], "outputs": self.effective_outputs(facts)}
+            producer = self.previous_steps.get(key, self)
+            facts = producer.passed_step(key)
+            dependencies[key] = {"step_run_hash": facts["step_run_hash"], "outputs": producer.effective_outputs(facts)}
         attempts = self.data["steps"][name]
         if reopen:
             require(not args.evidence, "audit repair already supplies approved retry evidence")
@@ -1229,8 +1384,12 @@ class Runtime:
             "task_specs": self.contract["task_specs"], "contract_sha256": self.data["contract_ref"]["sha256"],
         }
         if name == "final_chain":
-            scope["nodes"] = [{"node_id": node, **self.accepted_node(node)} for node in self.data["node_order"]]
-            scope["outputs"] = {step: self.effective_outputs(self.passed_step(step)) for step in self.data["step_order"]}
+            require(not self.data.get("next_batch"), "final Runtime Audit requires all Building batches")
+            scope["nodes"] = [{"node_id": node, **self.accepted_node(node)}
+                              for node in [*self.previous_nodes, *self.data["node_order"]]]
+            scope["outputs"] = {}
+            for step, producer in [*self.previous_steps.items(), *((step, self) for step in self.data["step_order"])]:
+                scope["outputs"][step] = producer.effective_outputs(producer.passed_step(step))
         else:
             require(name in self.nodes, "unknown Runtime Audit scope")
             scope["node_id"] = name
@@ -1263,6 +1422,10 @@ class Runtime:
         require(audit.get("scope_hash") == scope["scope_hash"], "Runtime Audit scope hash mismatch")
         auditor = text(audit.get("auditor"), "independent auditor").strip().casefold()
         relevant = scope.get("steps", self.data["steps"])
+        definitions = self.steps
+        if name == "final_chain":
+            relevant = {**{step: run.data["steps"][step] for step, run in self.previous_steps.items()}, **relevant}
+            definitions = {**{step: run.steps[step] for step, run in self.previous_steps.items()}, **definitions}
         require(all(auditor != attempt["start"]["actor"].strip().casefold()
                     for attempts in relevant.values() for attempt in attempts),
                 "Runtime Audit must be independent of all executors in scope")
@@ -1275,6 +1438,8 @@ class Runtime:
                 "formal Runtime Audit must be Markdown directly in audits/runtime")
         report_record = fingerprint(report)
         earlier_reports = [item["report"] for item in [*self.data["archived_audits"], *self.data["audits"].values()]]
+        if name == "final_chain":
+            earlier_reports.extend(run.data["audits"][node]["report"] for node, run in self.previous_nodes.items())
         execution_reports = [record["facts"]["report"] for attempts in relevant.values() for record in attempts]
         step_reviews = [record["review"]["report"] for attempts in relevant.values() for record in attempts]
         distinct_file(report_record, [*earlier_reports, *execution_reports, *step_reviews, *([summary] if summary else [])],
@@ -1282,8 +1447,8 @@ class Runtime:
         self.verify_report_layout(report, "runtime")
         report_content = report.read_text(encoding="utf-8")
         if self.runtime_root is not None:
-            nodes = self.nodes if name == "final_chain" else [name]
-            verify_runtime_index(report_content, nodes, {step: self.steps[step] for step in relevant})
+            nodes = [node["node_id"] for node in scope["nodes"]] if name == "final_chain" else [name]
+            verify_runtime_index(report_content, nodes, {step: definitions[step] for step in relevant})
         if "report_sha256" in audit:
             require(audit["report_sha256"] == report_record["sha256"], "Runtime Audit report fingerprint mismatch")
         else:
@@ -1341,8 +1506,13 @@ class Runtime:
                 and scope["scope_hash"] == audit["scope_hash"], "Runtime Audit acceptance scope mismatch")
         require(acceptance.get("accepted_limitations") == audit["limitations"], "audit limitations require explicit acceptance")
         user_message = text(acceptance.get("user_message_ref"), "user acceptance message reference")
+        require_fresh_batch_message_ref(self.state, self.data.get("batch_id"), user_message,
+                                        "Runtime Audit acceptance")
         require(all(user_message != item.get("acceptance", {}).get("user_message_ref")
                     for item in [*self.data["audits"].values(), *self.data["archived_audits"]]),
+                "each Runtime Audit requires its own user decision")
+        require(all(user_message != run.data["audits"][node]["acceptance"]["user_message_ref"]
+                    for node, run in self.previous_nodes.items()),
                 "each Runtime Audit requires its own user decision")
         require(timestamp(acceptance.get("accepted_at")) > timestamp(audit["registered_at"]),
                 "Runtime Audit acceptance must be after formal report registration")
@@ -1525,6 +1695,8 @@ class Runtime:
                 "draft repair must bind the current scope and remain in Runtime")
         reviewer = text(decision.get("auditor"), "independent draft auditor").strip().casefold()
         relevant = scope.get("steps", self.data["steps"])
+        if name == "final_chain":
+            relevant = {**{step: run.data["steps"][step] for step, run in self.previous_steps.items()}, **relevant}
         require(all(reviewer != attempt["start"]["actor"].strip().casefold()
                     for attempts in relevant.values() for attempt in attempts),
                 "draft Runtime Audit must be independent of executors")
@@ -1595,6 +1767,8 @@ class Runtime:
         require(route in ROUTES, "invalid return route")
         text(decision.get("reason"), "return reason")
         user_message = text(decision.get("user_message_ref"), "separate user decision message reference")
+        require_fresh_batch_message_ref(self.state, self.data.get("batch_id"), user_message,
+                                        "Runtime return decision")
         require(all(user_message != item["decision"]["user_message_ref"] for item in self.data["return_decisions"]),
                 "Runtime return user message already recorded")
         decided_at = timestamp(decision.get("decided_at"))
@@ -1684,16 +1858,21 @@ class Runtime:
             require(scope["scope_hash"] in content and audit["audit_id"] in content,
                     "Runtime Finish must identify the accepted chain_hash and runtime_audit_id")
             for identity in scope["nodes"]:
-                require(identity["audit_id"] in content and identity["run_hash"] in content,
-                        "Runtime Finish must identify each accepted milestone audit and run_hash")
+                require(identity["run_hash"] in content, "Runtime Finish must identify each accepted milestone run_hash")
+        if self.runtime_root is None:
+            delivery = "\n".join(lines) if current_layout else content
+            require(audit["audit_id"] in delivery, "Runtime Finish must identify the accepted runtime_audit_id")
+            for identity in scope["nodes"]:
+                require(identity["audit_id"] in delivery, "Runtime Finish must identify each accepted milestone audit")
             for outputs in scope["outputs"].values():
                 for output in outputs.values():
-                    require(output["path"] in content or Path(output["path"]).as_posix() in content,
+                    require(output["path"] in delivery or Path(output["path"]).as_posix() in delivery,
                             "Runtime Finish must link each audited output")
         result = {
             "run_id": self.run_id, "chain_hash": scope["scope_hash"], "final_audit_id": audit["audit_id"],
             "node_audits": scope["nodes"], "result_manifest": scope["outputs"],
-            "limitations": {name: binding["limitations"] for name, binding in self.data["audits"].items()},
+            "limitations": {**{node: run.data["audits"][node]["limitations"] for node, run in self.previous_nodes.items()},
+                            **{name: binding["limitations"] for name, binding in self.data["audits"].items()}},
         }
         self.data["finish"] = fingerprint(report)
         if self.runtime_root is not None:
@@ -1708,6 +1887,8 @@ class Runtime:
 def dispatch(args, state, save, verify_report_layout, *, state_path=None):
     runtime = Runtime(state, save, verify_report_layout, state_path=state_path)
     try:
+        if args.action != "runtime-status":
+            runtime.verify_completed_batches()
         if args.action == "runtime-init":
             return runtime.initialize(args)
         require(runtime.data, "Runtime has not been initialized")
@@ -1719,6 +1900,7 @@ def dispatch(args, state, save, verify_report_layout, *, state_path=None):
             "runtime-scope": lambda args: runtime.scope(args.value), "runtime-audit": runtime.audit,
             "runtime-accept": runtime.accept, "runtime-audit-repair": runtime.audit_repair, "runtime-return": runtime.return_stage,
             "runtime-interrupt": runtime.interrupt,
+            "runtime-next-batch": runtime.next_batch,
             "runtime-finish": runtime.finish, "runtime-status": lambda args: runtime.status(),
         }
         if args.action != "runtime-status":
@@ -1734,7 +1916,7 @@ def dispatch(args, state, save, verify_report_layout, *, state_path=None):
                     (args.action == "runtime-return" and accepted_scope),
                     "formal Runtime Audit is at its Runtime Audit gate; user decision required")
         if args.action in {"runtime-authorize", "runtime-report", "runtime-scope", "runtime-audit", "runtime-accept",
-                           "runtime-audit-repair", "runtime-finish"}:
+                           "runtime-audit-repair", "runtime-finish", "runtime-next-batch"}:
             verify_code(runtime.root, runtime.contract["code_commit"])
         return handlers[args.action](args)
     except subprocess.CalledProcessError as error:
@@ -1753,7 +1935,7 @@ def project(data):
     if final:
         return "runtime_finish_pending" if final.get("acceptance") else "final_chain_audit_gate"
     if all(audits.get(node, {}).get("acceptance") for node in data["node_order"]):
-        return "final_chain_audit_pending"
+        return "batch_complete_pending" if data.get("next_batch") else "final_chain_audit_pending"
     if any(not audit.get("acceptance") for audit in audits.values()):
         return "milestone_audit_gate"
     attempts = data["steps"]

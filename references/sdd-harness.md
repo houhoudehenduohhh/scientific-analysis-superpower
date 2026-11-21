@@ -40,6 +40,14 @@ python <Harness路径> init <WORKTREE>/.tmp/sdd/<计划名>/state.json --build-p
 
 旧计划若已有 Harness 状态，且计划的路径和指纹与状态记录一致，可沿用原工作区续跑。首次初始化使用包含功能单元 Git 根目录的获批计划。
 
+## 建设批次
+
+新版「阶段性验收节点」表以 `B01`、`B02` 等编号标出建设批次。前置建设要求填写「无」或「N01、N02 已验收」，可接句号和定稿所需的说明。Runtime 前置节点依然决定运行顺序。每个直接负责 Runtime 步骤的 Build Task 归属一个批次，通用工程任务通过现有任务依赖纳入最早需要它的批次。
+
+分批计划的每次 Spec 批准 JSON 均包含 `batch_id`，其 `task_specs` 绑定本批获批任务。Building Audit 及 Runtime 合同只覆盖当前批次。后续批次的 Task Spec 可以先保持草案。
+
+本批节点全部获接受且还有后续批次时，调用 `runtime-next-batch` 归档本批规格和已验收的 Runtime，再通过 `proposal-rebind` 登记下一批的新批准。新批次使用独立的 Building 证据路径、审计编号、运行合同和 `run_id`。上游交接以原审计和已发布产物的指纹为准。旧批次证据缺失或不符时，恢复原路径上的同版本证据再继续。若确需重做已完成的批次，从受影响批次另建获批周期。当前批次交接只支持向后推进。旧版节点表沿用单次 Building Audit 流程。
+
 ## Runtime 命令
 
 沿用同一 `state.json` 和 `sdd-harness.py`。命令表中的动作都使用 `python <Harness路径> <state.json> <命令>`。
@@ -62,7 +70,8 @@ python <Harness路径> init <WORKTREE>/.tmp/sdd/<计划名>/state.json --build-p
 | `runtime-audit <node_id或final_chain> --evidence <审计登记.json>` | 绑定正式审计报告并停在用户门禁。 |
 | `runtime-accept <node_id或final_chain> --evidence <用户接受.json>` | 登记用户对所呈现版本的明确接受。 |
 | `runtime-return <step_id、node_id或final_chain> --evidence <返工裁决.json>` | 绑定当前步骤或正式审计的裁决，按受影响范围返工或交回上游。 |
-| `proposal-rebind --build-plan <修订的build_plan.md> --evidence <新Spec批准.json>` | 仅在 Runtime 返回 Proposal 后登记用户新批准的计划和任务指纹，开始新 Building 周期。 |
+| `runtime-next-batch` | 核对本批所有里程碑的 Runtime Audit 已获接受，归档当前周期并进入下一批 Proposal。 |
+| `proposal-rebind --build-plan <修订的build_plan.md> --evidence <新Spec批准.json>` | 在 Runtime 返回 Proposal 或完成建设批次交接后登记用户新批准的计划和任务指纹，开始新 Building 周期。 |
 | `runtime-finish --artifact <交付说明.md>` | 核对最终审计接受和证据身份，登记交付说明。 |
 
 协调者负责从对话取得真实的用户裁决、派发独立 Agent 并记录身份。Harness 校验提交给它的版本、范围、字段和证据，聊天用户与子 Agent 身份由调用方提供。

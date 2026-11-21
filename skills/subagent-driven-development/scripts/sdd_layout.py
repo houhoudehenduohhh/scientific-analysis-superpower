@@ -14,6 +14,8 @@ TASK_HEADER = "| 任务 ID | Task MD | 目的与边界 | 前置任务／产物 |
 AC_HEADER = "| AC ID（完整任务 ID + -ACNN） | 验收目标 | 可观察的成功条件 | 验证方式 | 验证阶段 | 当前状态 |"
 STEPS_HEADER = "| 运行步骤 ID | 对应任务 | 前置步骤或节点 | 输入与输出 | 可并行步骤／互斥条件 | 完成检查 |"
 NODES_HEADER = "| 节点 ID | 节点目的 | 包含的运行步骤 | 前置节点 | 阶段性成果与验收条件 | 用户授权范围 |"
+BATCH_NODES_HEADER = ("| 节点 ID | 节点目的 | 建设批次 | 前置建设要求 | 包含的运行步骤 | "
+                      "Runtime 前置节点 | 阶段性成果与验收条件 |")
 AUDIT_HEADER = "| 任务 ID | 任务目的 | AC ID | 成功条件 | 完成情况与验证范围 |"
 TASK_ID = r"T\d+(?:-EXT\d+)?"
 SCRIPT_SUFFIXES = {
@@ -145,9 +147,88 @@ def task_spec_path(plan_path, link, unit):
     return task
 
 
+def batch_plan(content):
+    heading = "## 阶段性验收节点"
+    if BATCH_NODES_HEADER not in {line.strip() for line in section(content, heading)}:
+        return None
+    rows = unique(table(content, heading, BATCH_NODES_HEADER), "Runtime node ID")
+    step_rows = unique(table(content, "## Runtime 执行图", STEPS_HEADER), "Runtime step ID")
+    task_rows = unique(table(content, "## 任务清单", TASK_HEADER), "task ID")
+    steps = {key: {"task": task, "needs": plan_ids(needs)}
+             for key, (task, needs, *_rest) in step_rows.items()}
+    nodes = {}
+    batches = {}
+    for node, (_, batch, preparation, members, needs, _) in rows.items():
+        batch = batch.strip("`")
+        require(re.fullmatch(r"B[0-9]{2,}", batch) and int(batch[1:]) > 0,
+                f"invalid Building batch ID for {node}: {batch}")
+        if preparation in {"无", "—", "-", "none"}:
+            build_needs = set()
+        else:
+            rule = re.fullmatch(r"(.+?)[ \t]*已验收(?:[。；;].*)?", preparation)
+            require(rule, f"Building prerequisites for {node} must name accepted nodes")
+            build_needs = plan_ids(rule[1])
+            require(build_needs, f"Building prerequisites for {node} must name accepted nodes")
+        nodes[node] = {"batch": batch, "build_needs": build_needs,
+                       "needs": plan_ids(needs), "steps": plan_ids(members)}
+        scope = batches.setdefault(batch, {"tasks": set(), "nodes": set(), "steps": set(), "needs": set()})
+        scope["nodes"].add(node)
+        scope["steps"].update(nodes[node]["steps"])
+        scope["needs"].update(build_needs)
+    batch_order = sorted(batches, key=lambda key: int(key[1:]))
+    require(len({int(key[1:]) for key in batches}) == len(batches), "duplicate Building batch number")
+    rank = {key: index for index, key in enumerate(batch_order)}
+    step_nodes = {}
+    for node, info in nodes.items():
+        for step in info["steps"]:
+            require(step in steps and step not in step_nodes, f"invalid or duplicate Runtime step {step}")
+            step_nodes[step] = node
+        for key, relation in (("build_needs", "<"), ("needs", "<=")):
+            for prior in info[key]:
+                require(prior in nodes, f"unknown prerequisite node {prior} for {node}")
+                earlier = rank[nodes[prior]["batch"]]
+                current = rank[info["batch"]]
+                require(earlier < current or (relation == "<=" and earlier == current),
+                        f"prerequisite node {prior} is not in an eligible batch for {node}")
+    require(step_nodes.keys() == steps.keys(), "each Runtime step must belong to exactly one node")
+    for step, info in steps.items():
+        current = rank[nodes[step_nodes[step]]["batch"]]
+        for key in info["needs"]:
+            prior = step_nodes.get(key, key)
+            require(prior in nodes and rank[nodes[prior]["batch"]] <= current,
+                    f"Runtime step {step} depends on a later or unknown node: {key}")
+
+    dependencies = {task: plan_ids(values[2]) & task_rows.keys() for task, values in task_rows.items()}
+    graph_order({task: {"needs": sorted(needed)} for task, needed in dependencies.items()}, "task")
+    assigned = set()
+    for batch in batch_order:
+        scope = batches[batch]
+        owned = {steps[step]["task"] for step in scope["steps"]}
+        require(owned <= task_rows.keys(), f"unknown Build Task in batch {batch}")
+        require(not owned & assigned,
+                f"Runtime steps owned by the same Build Task must share a Building batch: {batch}")
+        pending = list(owned)
+        while pending:
+            task = pending.pop()
+            if task not in assigned and task not in scope["tasks"]:
+                scope["tasks"].add(task)
+                pending.extend(dependencies[task])
+        assigned.update(scope["tasks"])
+    if len(batches) == 1:
+        batches[batch_order[0]]["tasks"].update(task_rows)
+    else:
+        require(assigned == task_rows.keys(), "every Build Task must be linked to a Runtime step or task dependency")
+    return {"nodes": nodes, "steps": steps, "batches": {key: batches[key] for key in batch_order}}
+
+
 def verify_graph(content, tasks):
     steps = unique(table(content, "## Runtime 执行图", STEPS_HEADER), "Runtime step ID")
-    nodes = unique(table(content, "## 阶段性验收节点", NODES_HEADER), "Runtime node ID")
+    layout = batch_plan(content)
+    if layout is None:
+        nodes = unique(table(content, "## 阶段性验收节点", NODES_HEADER), "Runtime node ID")
+    else:
+        nodes = {key: ("", "、".join(sorted(value["steps"])), "、".join(sorted(value["needs"])))
+                 for key, value in layout["nodes"].items()}
     require(not steps.keys() & nodes.keys(), "Runtime step and node IDs must be disjoint")
     links = {}
     handled = set()
@@ -182,7 +263,7 @@ def result_paths(content):
     return set(_logical_results(content).values())
 
 
-def proposal_layout(plan_path, *, validate_task=None):
+def proposal_layout(plan_path, *, validate_task=None, task_ids=None):
     plan_path = Path(plan_path).resolve()
     content = plan_path.read_text(encoding="utf-8")
     require(structured_plan(content), "Build Plan requires '- path_schema: 1' for fresh Proposal")
@@ -217,6 +298,9 @@ def proposal_layout(plan_path, *, validate_task=None):
         for path, status in paths.items():
             require(declarations.setdefault(path, status) == status, f"conflicting main entry change for {path}")
     no_path_collisions(list(declarations), "main entry path")
+    if task_ids is not None:
+        require(set(task_ids) <= tasks.keys(), "Building scope contains an unknown task")
+        declarations = {path: status for task_id in task_ids for path, status in entries[task_id].items()}
 
     outputs = _logical_results(content)
 
@@ -257,8 +341,10 @@ def task_expectations(plan_path):
     return proposal_layout(plan_path)[0]
 
 
-def verify_acceptance_index(audit_text, plan_path):
+def verify_acceptance_index(audit_text, plan_path, *, task_ids=None):
     tasks = task_expectations(plan_path)
+    if task_ids is not None:
+        tasks = {key: tasks[key] for key in task_ids}
     expected = {(task_id, ac_id): (task["purpose"], criterion)
                 for task_id, task in tasks.items() for ac_id, criterion in task["ac"].items()}
     rows = table(audit_text, "## 6. 任务验收索引", AUDIT_HEADER, label="acceptance index", require_block_break=True)
@@ -297,14 +383,19 @@ def looks_like_script(root, path, record):
         return stream.read(2) == b"#!"
 
 
-def verify_building_paths(root, plan_path, bases, head):
+def verify_building_paths(root, plan_path, bases, head, *, task_ids=None):
     """Check the audited tree against the original scope of all completed tasks."""
-    _, declarations = proposal_layout(plan_path)
+    _, declarations = proposal_layout(plan_path, task_ids=task_ids)
     base_list = [bases] if isinstance(bases, str) else sorted(set(bases))
     require(base_list, "Building paths require an audited Git baseline")
     base = base_list[0] if len(base_list) == 1 else unit_git.git(root, "merge-base", "--octopus", *base_list).stdout.strip()
     prior = git_tree(root, base)
     current = git_tree(root, head)
+    if task_ids is not None:
+        _, all_entries = proposal_layout(plan_path)
+        for path in all_entries.keys() - declarations.keys():
+            require(prior.get(path) == current.get(path),
+                    f"main entry changed outside the current Building batch: {path}")
     for path, status in declarations.items():
         require(path in current and current[path][0] in {"100644", "100755"},
                 f"approved main entry missing or not a regular file at audited HEAD: {path}")

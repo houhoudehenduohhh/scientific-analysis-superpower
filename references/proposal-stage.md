@@ -17,7 +17,7 @@ Build Plan 记录目标、源数据、算法概括、拟得到的输出、项目
 2. 与用户讨论目标、源数据、边界、算法方向和输出。
 3. 按模板生成或更新 Build Plan，在「目标与边界」写明 `功能单元 Git 根目录` 的绝对路径。若用户给的是上层目录，定位本轮实际开发的子目录。
 4. 按模板生成本轮 Task MD，并在 Build Plan 中索引。
-5. 运行 Harness 的 `verify-build-plan` 和带 `--build-plan BUILD_PLAN` 的 `verify-task-spec`。验明全部索引任务、AC、结构化路径和依赖图。
+5. 运行 Harness 的 `verify-build-plan` 和带 `--build-plan BUILD_PLAN` 的 `verify-task-spec`。验明全部索引任务、AC、结构化路径和依赖图。按「阶段性验收节点」表划分批次时，保留后续批次的 Task Spec 草案，先提交当前批次的具体规格和整体路线。
 6. 检查任务依赖、接口、AC 和 Runtime 步骤图无环。
 7. 呈现文件、版本编号、校验结果和将初始化或复用 Git 的绝对路径，等待用户批准。更换该路径属于计划实质变更，须重新批准。
 
