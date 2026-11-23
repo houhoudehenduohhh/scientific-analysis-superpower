@@ -16,7 +16,7 @@ from pathlib import Path, PurePosixPath
 COMMANDS = {
     "runtime-init", "runtime-authorize", "runtime-run", "runtime-review",
     "runtime-report", "runtime-scope", "runtime-audit", "runtime-accept", "runtime-audit-repair",
-    "runtime-return", "runtime-interrupt", "runtime-finish", "runtime-status", "runtime-next-batch",
+    "runtime-return", "runtime-interrupt", "runtime-finish", "runtime-status", "runtime-next-batch", "runtime-next-node",
 }
 PASS = {"PASS", "PASS_WITH_NOTES"}
 FAIL = {"CHANGES_REQUIRED", "BLOCKED"}
@@ -50,6 +50,10 @@ def runtime_message_refs(run, *, include_building_acceptance=True):
                 for audit in [*run["audits"].values(), *run["archived_audits"]]
                 if audit.get("acceptance"))
     return refs
+
+
+def execution_scope_id(record):
+    return record.get("node_id", record.get("batch_id"))
 
 
 def earlier_batched_run_message_refs(state, batch_id):
@@ -474,7 +478,7 @@ def verified_contract(contract, state, *, previous_nodes=None, previous_steps=No
         step_environment(step, code_files[name])
     for node in nodes:
         require(any(step["node"] == node for step in steps.values()), f"no steps declared for node {node}")
-    verify_plan_graph(plan, nodes, steps, state.get("spec_approval", {}).get("batch_id"))
+    verify_plan_graph(plan, nodes, steps, execution_scope_id(state.get("spec_approval", {})))
     return root, node_order, step_order, executables, code_files
 
 
@@ -736,7 +740,7 @@ def record_building_gate(state, root, evidence_path, verify_report_layout, *, ev
     audit_text = report.read_text(encoding="utf-8")
     plan_path = Path(state["refs"]["build_plan"]["path"])
     structured = sdd_layout.structured_plan(plan_path.read_text(encoding="utf-8"))
-    task_ids = tasks.keys() if state.get("spec_approval", {}).get("batch_id") else None
+    task_ids = tasks.keys() if execution_scope_id(state.get("spec_approval", {})) else None
     if structured:
         unit_root = Path(state.get("git", {}).get("unit_root", root))
         require(report.parent in {root / "audits/building", unit_root / "audits/building"}
@@ -893,17 +897,22 @@ class Runtime:
             self.previous_steps.update({step: original for step in run["step_order"]})
 
     def next_batch(self, args):
+        by_node = "node_id" in self.data
+        command = "runtime-next-node" if by_node else "runtime-next-batch"
+        require(args.action == command, f"this Build Plan uses {command}")
         require(not args.value and not args.evidence and not args.artifact,
-                "runtime-next-batch uses the current accepts and takes no scope or evidence")
-        next_batch = self.data.get("next_batch")
-        require(next_batch, "no later Building batch in the approved Build Plan")
+                f"{command} uses the current accepts and takes no scope or evidence")
+        next_key = "next_node" if by_node else "next_batch"
+        next_scope = self.data.get(next_key)
+        require(next_scope, "no later execution scope in the approved Build Plan")
         require(all(self.data["audits"].get(node, {}).get("acceptance") for node in self.nodes),
-                "complete and accept every current batch milestone before advancing")
+                "complete and accept every current batch milestone before advancing"
+                if not by_node else "accept the current Runtime node before advancing")
         for node in self.data["node_order"]:
             self.accepted_node(node)
         self.data.update(batch_completed_at=now(), return_stage="Proposal")
-        self.save("runtime-next-batch")
-        return {"status": "proposal", "next_batch": next_batch}
+        self.save(command)
+        return {"status": "proposal", next_key: next_scope}
 
     def run_workspace(self, root, run_id):
         require(self.state_path is not None, "Runtime requires the bound state path")
@@ -941,7 +950,7 @@ class Runtime:
             previous_steps={step: runtime.steps[step] for step, runtime in self.previous_steps.items()},
         )
         plan = Path(self.state["refs"]["build_plan"]["path"]).read_text(encoding="utf-8")
-        batch_id = self.state.get("spec_approval", {}).get("batch_id")
+        batch_id = execution_scope_id(self.state.get("spec_approval", {}))
         next_batch = None
         if batch_id is not None:
             layout = sdd_layout.batch_plan(plan)
@@ -1042,7 +1051,9 @@ class Runtime:
         if structured:
             self.state["runtime"]["published"] = {}
         if batch_id is not None:
-            self.state["runtime"].update(batch_id=batch_id, next_batch=next_batch)
+            scope_key = layout["scope_key"]
+            next_key = "next_node" if scope_key == "node_id" else "next_batch"
+            self.state["runtime"].update({scope_key: batch_id, next_key: next_batch})
         self.save("runtime-init")
         return {"status": "runtime_authorization_pending", "run_id": contract["run_id"],
                 "contract_sha256": contract_ref["sha256"], "building_audit_id": audit_id}
@@ -1056,7 +1067,7 @@ class Runtime:
         require(timestamp(approval.get("authorized_at")) >= timestamp(binding["accepted_at"]),
                 "Runtime authorization must occur at or after Building Audit acceptance")
         message_ref = text(approval.get("user_message_ref"), "Runtime authorization user message reference")
-        require_fresh_batch_message_ref(self.state, self.data.get("batch_id"), message_ref,
+        require_fresh_batch_message_ref(self.state, execution_scope_id(self.data), message_ref,
                                         "Runtime authorization", include_building_acceptance=False)
         require(all(message_ref != entry["approval"]["user_message_ref"]
                     for run in self.state.get("runtime_history", []) for entry in run["authorizations"]),
@@ -1410,7 +1421,8 @@ class Runtime:
             "task_specs": self.contract["task_specs"], "contract_sha256": self.data["contract_ref"]["sha256"],
         }
         if name == "final_chain":
-            require(not self.data.get("next_batch"), "final Runtime Audit requires all Building batches")
+            require(not (self.data.get("next_node") or self.data.get("next_batch")),
+                    "final Runtime Audit requires all Building batches or execution nodes")
             scope["nodes"] = [{"node_id": node, **self.accepted_node(node)}
                               for node in [*self.previous_nodes, *self.data["node_order"]]]
             scope["outputs"] = {}
@@ -1530,7 +1542,7 @@ class Runtime:
                 and scope["scope_hash"] == audit["scope_hash"], "Runtime Audit acceptance scope mismatch")
         require(acceptance.get("accepted_limitations") == audit["limitations"], "audit limitations require explicit acceptance")
         user_message = text(acceptance.get("user_message_ref"), "user acceptance message reference")
-        require_fresh_batch_message_ref(self.state, self.data.get("batch_id"), user_message,
+        require_fresh_batch_message_ref(self.state, execution_scope_id(self.data), user_message,
                                         "Runtime Audit acceptance")
         require(all(user_message != item.get("acceptance", {}).get("user_message_ref")
                     for item in [*self.data["audits"].values(), *self.data["archived_audits"]]),
@@ -1791,7 +1803,7 @@ class Runtime:
         require(route in ROUTES, "invalid return route")
         text(decision.get("reason"), "return reason")
         user_message = text(decision.get("user_message_ref"), "separate user decision message reference")
-        require_fresh_batch_message_ref(self.state, self.data.get("batch_id"), user_message,
+        require_fresh_batch_message_ref(self.state, execution_scope_id(self.data), user_message,
                                         "Runtime return decision")
         require(all(user_message != item["decision"]["user_message_ref"] for item in self.data["return_decisions"]),
                 "Runtime return user message already recorded")
@@ -1924,7 +1936,7 @@ def dispatch(args, state, save, verify_report_layout, *, state_path=None):
             "runtime-scope": lambda args: runtime.scope(args.value), "runtime-audit": runtime.audit,
             "runtime-accept": runtime.accept, "runtime-audit-repair": runtime.audit_repair, "runtime-return": runtime.return_stage,
             "runtime-interrupt": runtime.interrupt,
-            "runtime-next-batch": runtime.next_batch,
+            "runtime-next-batch": runtime.next_batch, "runtime-next-node": runtime.next_batch,
             "runtime-finish": runtime.finish, "runtime-status": lambda args: runtime.status(),
         }
         if args.action != "runtime-status":
@@ -1940,7 +1952,7 @@ def dispatch(args, state, save, verify_report_layout, *, state_path=None):
                     (args.action == "runtime-return" and accepted_scope),
                     "formal Runtime Audit is at its Runtime Audit gate; user decision required")
         if args.action in {"runtime-authorize", "runtime-report", "runtime-scope", "runtime-audit", "runtime-accept",
-                           "runtime-audit-repair", "runtime-finish", "runtime-next-batch"}:
+                           "runtime-audit-repair", "runtime-finish", "runtime-next-batch", "runtime-next-node"}:
             verify_code(runtime.root, runtime.contract["code_commit"])
         return handlers[args.action](args)
     except subprocess.CalledProcessError as error:
@@ -1959,6 +1971,8 @@ def project(data):
     if final:
         return "runtime_finish_pending" if final.get("acceptance") else "final_chain_audit_gate"
     if all(audits.get(node, {}).get("acceptance") for node in data["node_order"]):
+        if data.get("next_node"):
+            return "node_complete_pending"
         return "batch_complete_pending" if data.get("next_batch") else "final_chain_audit_pending"
     if any(not audit.get("acceptance") for audit in audits.values()):
         return "milestone_audit_gate"

@@ -56,7 +56,7 @@ assert no_unreviewed_upstream_output_is_used
 
 需要回到 Building 时，通过 `runtime-return` 记录用户裁决。Harness 归档前一周期的步骤、审计和 Building 任务证据，并清空本轮修复计数及 Building 门禁。用现有获批规格重新注册任务，生成不同版本的证据与审计，经用户的新接受与运行授权后再执行。
 
-当前批次节点均获接受且还有后续批次时，按 [建设批次交接](sdd-harness.md#建设批次) 保存原审计和已发布结果，再定稿下一批。最终全链条审计等完整计划的节点均获接受后进行。
+当前节点获接受且还有后续节点时，按 [节点交接](sdd-harness.md#节点交接) 保存原审计和已发布结果，再定稿下一节点。最终全链条审计等完整计划的节点均获接受后进行。
 
 需要回到 Proposal 时，先登记 `runtime-return` 以保存旧规格快照和两阶段证据，再修订规范路径下的 Build Plan 与 Task MD。用户批准修订版后，用 [Harness 的 `proposal-rebind`](sdd-harness.md#runtime-命令) 绑定新规格并开始新 Building 周期。新审计与运行授权绑定新的合同和 `run_id`。
 

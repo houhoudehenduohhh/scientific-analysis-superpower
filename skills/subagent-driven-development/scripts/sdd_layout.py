@@ -16,6 +16,8 @@ STEPS_HEADER = "| 运行步骤 ID | 对应任务 | 前置步骤或节点 | 输�
 NODES_HEADER = "| 节点 ID | 节点目的 | 包含的运行步骤 | 前置节点 | 阶段性成果与验收条件 | 用户授权范围 |"
 BATCH_NODES_HEADER = ("| 节点 ID | 节点目的 | 建设批次 | 前置建设要求 | 包含的运行步骤 | "
                       "Runtime 前置节点 | 阶段性成果与验收条件 |")
+SCOPED_NODES_HEADER = ("| 节点 ID | 节点目的 | 前置建设要求 | 包含的 Task | "
+                       "包含的运行步骤 | 阶段性成果与验收条件 |")
 AUDIT_HEADER = "| 任务 ID | 任务目的 | AC ID | 成功条件 | 完成情况与验证范围 |"
 TASK_ID = r"T\d+(?:-EXT\d+)?"
 SCRIPT_SUFFIXES = {
@@ -147,28 +149,81 @@ def task_spec_path(plan_path, link, unit):
     return task
 
 
+def accepted_prerequisites(preparation, node):
+    if preparation in {"无", "—", "-", "none"}:
+        return set()
+    rule = re.fullmatch(r"(.+?)[ \t]*已验收(?:[。；;].*)?", preparation)
+    require(rule, f"Building prerequisites for {node} must name accepted nodes")
+    needs = plan_ids(rule[1])
+    require(needs, f"Building prerequisites for {node} must name accepted nodes")
+    return needs
+
+
+def node_plan(rows, steps, task_rows):
+    nodes, scopes, task_nodes, step_nodes = {}, {}, {}, {}
+    for node, (_, preparation, task_cell, members, _) in rows.items():
+        require(re.fullmatch(r"N[0-9]{2,}", node) and int(node[1:]) > 0, f"invalid Runtime node: {node}")
+        needs = accepted_prerequisites(preparation, node)
+        tasks, member_steps = plan_ids(task_cell), plan_ids(members)
+        require(tasks and tasks <= task_rows.keys(), f"unknown or empty Task scope for {node}")
+        require(member_steps and member_steps <= steps.keys(), f"unknown or empty Runtime steps for {node}")
+        for task in tasks:
+            require(task not in task_nodes, f"duplicate Task {task} in node scope")
+            task_nodes[task] = node
+        for step in member_steps:
+            require(step not in step_nodes, f"duplicate Runtime step {step} in node scope")
+            require(steps[step]["task"] in tasks, f"Runtime step {step} requires its Task in {node}")
+            step_nodes[step] = node
+        nodes[node] = {"batch": node, "build_needs": needs, "needs": needs, "steps": member_steps}
+        scopes[node] = {"tasks": tasks, "nodes": {node}, "steps": member_steps, "needs": needs}
+    ordered = sorted(nodes, key=lambda node: int(node[1:]))
+    ranks = {node: int(node[1:]) for node in ordered}
+    require(len(set(ranks.values())) == len(ranks), "duplicate Runtime node number")
+    require(task_nodes.keys() == task_rows.keys(), "each Build Task must belong to exactly one node")
+    require(step_nodes.keys() == steps.keys(), "each Runtime step must belong to exactly one node")
+    for node, info in nodes.items():
+        for prior in info["needs"]:
+            require(prior in ranks and ranks[prior] < ranks[node],
+                    f"prerequisite node {prior} must be earlier than {node}")
+
+    def require_prerequisite(node, prior, source):
+        require(prior in nodes, f"unknown prerequisite node {prior} for {source}")
+        require(prior == node or prior in nodes[node]["needs"],
+                f"{source} has undeclared prerequisite node {prior}")
+
+    for task, values in task_rows.items():
+        for prior in plan_ids(values[2]) & task_nodes.keys():
+            require_prerequisite(task_nodes[task], task_nodes[prior], f"Task {task}")
+    for step, spec in steps.items():
+        for prior in spec["needs"]:
+            require_prerequisite(step_nodes[step], step_nodes.get(prior, prior), f"Runtime step {step}")
+    return {"scope_key": "node_id", "node_header": SCOPED_NODES_HEADER, "nodes": nodes,
+            "steps": steps, "batches": {node: scopes[node] for node in ordered}}
+
+
 def batch_plan(content):
     heading = "## 阶段性验收节点"
-    if BATCH_NODES_HEADER not in {line.strip() for line in section(content, heading)}:
+    headers = {line.strip() for line in section(content, heading)}
+    require(len(headers & {SCOPED_NODES_HEADER, BATCH_NODES_HEADER, NODES_HEADER}) <= 1,
+            "Build Plan must use only one acceptance node table format")
+    scoped_nodes = SCOPED_NODES_HEADER in headers
+    header = SCOPED_NODES_HEADER if scoped_nodes else BATCH_NODES_HEADER
+    if header not in headers:
         return None
-    rows = unique(table(content, heading, BATCH_NODES_HEADER), "Runtime node ID")
+    rows = unique(table(content, heading, header), "Runtime node ID")
     step_rows = unique(table(content, "## Runtime 执行图", STEPS_HEADER), "Runtime step ID")
     task_rows = unique(table(content, "## 任务清单", TASK_HEADER), "task ID")
     steps = {key: {"task": task, "needs": plan_ids(needs)}
              for key, (task, needs, *_rest) in step_rows.items()}
+    if scoped_nodes:
+        return node_plan(rows, steps, task_rows)
     nodes = {}
     batches = {}
     for node, (_, batch, preparation, members, needs, _) in rows.items():
         batch = batch.strip("`")
         require(re.fullmatch(r"B[0-9]{2,}", batch) and int(batch[1:]) > 0,
                 f"invalid Building batch ID for {node}: {batch}")
-        if preparation in {"无", "—", "-", "none"}:
-            build_needs = set()
-        else:
-            rule = re.fullmatch(r"(.+?)[ \t]*已验收(?:[。；;].*)?", preparation)
-            require(rule, f"Building prerequisites for {node} must name accepted nodes")
-            build_needs = plan_ids(rule[1])
-            require(build_needs, f"Building prerequisites for {node} must name accepted nodes")
+        build_needs = accepted_prerequisites(preparation, node)
         nodes[node] = {"batch": batch, "build_needs": build_needs,
                        "needs": plan_ids(needs), "steps": plan_ids(members)}
         scope = batches.setdefault(batch, {"tasks": set(), "nodes": set(), "steps": set(), "needs": set()})
@@ -218,7 +273,8 @@ def batch_plan(content):
         batches[batch_order[0]]["tasks"].update(task_rows)
     else:
         require(assigned == task_rows.keys(), "every Build Task must be linked to a Runtime step or task dependency")
-    return {"nodes": nodes, "steps": steps, "batches": {key: batches[key] for key in batch_order}}
+    return {"scope_key": "batch_id", "node_header": BATCH_NODES_HEADER,
+            "nodes": nodes, "steps": steps, "batches": {key: batches[key] for key in batch_order}}
 
 
 def verify_graph(content, tasks):

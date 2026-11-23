@@ -39,7 +39,7 @@ NEXT = {
  "runtime_fix_pending":["retry_runtime_step","return_building","return_proposal"],
  "milestone_audit_pending":["dispatch_milestone_audit"], "milestone_audit_gate":["wait_for_user_decision"],
  "final_chain_audit_pending":["dispatch_final_chain_audit"], "runtime_finish_pending":["dispatch_runtime_finish"],
- "batch_complete_pending":["advance_next_batch"],
+ "batch_complete_pending":["advance_next_batch"], "node_complete_pending":["advance_next_node"],
  "user_decision_pending":["wait_for_user_decision"],
  "runtime_authorization_pending":["record_runtime_authorization"],
  "final_chain_audit_gate":["wait_for_user_decision"],
@@ -49,7 +49,7 @@ PHASE_STATUSES = {
  "building":{"building_incomplete","task_review_pending","fix_round_pending","re_review_pending","task_complete","final_review_pending","user_decision_pending"},
  "building_audit":{"building_audit_pending","building_audit_gate"},
  "runtime":{"runtime_authorization_pending","runtime_authorized","runtime_step_pending","runtime_step_review_pending","runtime_fix_pending"},
- "runtime_audit":{"milestone_audit_pending","milestone_audit_gate","batch_complete_pending","final_chain_audit_pending","final_chain_audit_gate"},
+ "runtime_audit":{"milestone_audit_pending","milestone_audit_gate","batch_complete_pending","node_complete_pending","final_chain_audit_pending","final_chain_audit_gate"},
  "runtime_finish":{"runtime_finish_pending","runtime_finished"}}
 ACTION_TARGETS = {
  "resume_or_redispatch_proposer":{"building_incomplete"}, "resume_or_redispatch_implementer":{"building_incomplete"},
@@ -59,7 +59,7 @@ ACTION_TARGETS = {
  "record_runtime_authorization":{"runtime_authorized"},
  "execute_runtime_step":{"runtime_step_pending"}, "dispatch_runtime_step_reviewer":{"runtime_step_review_pending"},
  "retry_runtime_step":{"runtime_step_pending"}, "return_building":{"building_incomplete"}, "return_proposal":{"proposal"},
- "dispatch_milestone_audit":{"milestone_audit_pending"}, "advance_next_batch":{"proposal"},
+ "dispatch_milestone_audit":{"milestone_audit_pending"}, "advance_next_batch":{"proposal"}, "advance_next_node":{"proposal"},
  "dispatch_final_chain_audit":{"final_chain_audit_pending"}, "dispatch_runtime_finish":{"runtime_finish_pending"}}
 
 def _phase(status, *, runtime=False):
@@ -266,13 +266,16 @@ def validate_evidence(state):
 def sync_manifests(root, state):
     root=Path(root); refs=state.get("refs", {}); status=state.get("status"); phase=_phase(status, runtime="runtime" in state)
     view={"build_plan":refs.get("build_plan"), "build_plan_sha256":refs.get("build_plan",{}).get("sha256") if refs.get("build_plan") else None}
-    batch_id = state.get("spec_approval", {}).get("batch_id")
-    if batch_id is not None:
-        view["batch_id"] = batch_id
-    elif status == "proposal" and state.get("runtime_history"):
+    approval = state.get("spec_approval", {})
+    for key in ("node_id", "batch_id"):
+        if key in approval:
+            view[key] = approval[key]
+    if not ("node_id" in view or "batch_id" in view) and status == "proposal" and state.get("runtime_history"):
         prior = state["runtime_history"][-1]
         if "batch_completed_at" in prior:
-            view["next_batch"] = prior["next_batch"]
+            for key in ("next_node", "next_batch"):
+                if key in prior:
+                    view[key] = prior[key]
     if "git" in state:
         view["git"] = state["git"]
     write(root/"analysis-state.json", {"phase":phase,"status":status,**view,"building_manifest":"building/manifest.json","runtime_manifest":"runtime/manifest.json","next_allowed_actions":list(NEXT.get(status, []))})
@@ -570,6 +573,8 @@ def verify_task_spec_layout(task_spec):
     return {"task_spec": str(Path(task_spec).resolve()), "layout": "valid"}
 
 def verify_build_plan_layout(build_plan):
+    from sdd_layout import BATCH_NODES_HEADER, NODES_HEADER, SCOPED_NODES_HEADER
+
     text = Path(build_plan).read_text(encoding="utf-8")
     required = [
         BUILD_PLAN_TITLE, "## 目标与边界", "## 源数据、算法与输出",
@@ -579,12 +584,9 @@ def verify_build_plan_layout(build_plan):
         "| 运行步骤 ID | 对应任务 | 前置步骤或节点 | 输入与输出 | 可并行步骤／互斥条件 | 完成检查 |",
     ]
     missing = [h for h in required if h not in text]
-    node_headers = (
-        "| 节点 ID | 节点目的 | 包含的运行步骤 | 前置节点 | 阶段性成果与验收条件 | 用户授权范围 |",
-        "| 节点 ID | 节点目的 | 建设批次 | 前置建设要求 | 包含的运行步骤 | Runtime 前置节点 | 阶段性成果与验收条件 |",
-    )
+    node_headers = (NODES_HEADER, BATCH_NODES_HEADER, SCOPED_NODES_HEADER)
     if not any(header in text for header in node_headers):
-        missing.append(node_headers[1])
+        missing.append(SCOPED_NODES_HEADER)
     if missing:
         raise SystemExit(json.dumps({"missing": missing}, ensure_ascii=False))
     headings = ["## 目标与边界", "## 源数据、算法与输出", "## 项目目录结构", "## 任务清单", "## Runtime 执行图", "## 阶段性验收节点", "## 批准"]
@@ -665,14 +667,17 @@ def approved_build_plan(plan_path, approval_path, *, completed=()):
                     "Spec approval Build Plan fingerprint differs")
     layout = batch_plan(content)
     if layout is None:
-        runtime.require(not completed and "batch_id" not in approval,
-                        "Spec approval batch_id requires a batched Build Plan")
+        runtime.require(not completed and not ({"node_id", "batch_id"} & approval.keys()),
+                        "Spec approval scope requires a node-based or batched Build Plan")
     else:
         order = list(layout["batches"])
         runtime.require(order[:len(completed)] == list(completed) and len(completed) < len(order),
                         "Build Plan must preserve the completed Building batches in order")
         batch = order[len(completed)]
-        runtime.require(approval.get("batch_id") == batch, f"Spec approval requires eligible batch_id {batch}")
+        scope_key = layout["scope_key"]
+        runtime.require(approval.get(scope_key) == batch
+                        and ({"node_id", "batch_id"} & approval.keys()) == {scope_key},
+                        f"Spec approval requires eligible {scope_key} {batch}")
         declared_tasks = {key: declared_tasks[key] for key in layout["batches"][batch]["tasks"]}
     tasks = runtime.objects(approval.get("task_specs"), "Spec approval Task fingerprint mapping", nonempty=True)
     for task_id, sha256 in tasks.items():
@@ -689,7 +694,7 @@ def approved_build_plan(plan_path, approval_path, *, completed=()):
 
 def verify_completed_plan(plan, completed, state):
     import runtime_harness as runtime
-    from sdd_layout import BATCH_NODES_HEADER, ENTRY_HEADER, RESULT_HEADER, STEPS_HEADER, TASK_HEADER, batch_plan, table
+    from sdd_layout import ENTRY_HEADER, RESULT_HEADER, STEPS_HEADER, TASK_HEADER, batch_plan, table
 
     current_plan = batch_plan(plan)
     for run in completed:
@@ -698,15 +703,18 @@ def verify_completed_plan(plan, completed, state):
         for record in snapshots.values():
             _validate_record(record, "completed batch spec")
         previous = Path(snapshots["build-plan"]["path"]).read_text(encoding="utf-8")
-        batch = run["batch_id"]
-        scope = batch_plan(previous)["batches"][batch]
+        batch = runtime.execution_scope_id(run)
+        original_plan = batch_plan(previous)
+        runtime.require(original_plan["scope_key"] == current_plan["scope_key"],
+                        "completed execution scopes must preserve the original node table format")
+        scope = original_plan["batches"][batch]
         runtime.require(current_plan["batches"].get(batch) == scope,
                         f"completed Building batch scope changed: {batch}")
         for heading, header, identifiers in (
             ("## 任务清单", TASK_HEADER, scope["tasks"]),
             ("## 项目目录结构", ENTRY_HEADER, scope["tasks"]),
             ("## Runtime 执行图", STEPS_HEADER, scope["steps"]),
-            ("## 阶段性验收节点", BATCH_NODES_HEADER, scope["nodes"]),
+            ("## 阶段性验收节点", original_plan["node_header"], scope["nodes"]),
         ):
             original = [row for row in table(previous, heading, header) if row[0] in identifiers]
             current = [row for row in table(plan, heading, header) if row[0] in identifiers]
@@ -734,7 +742,7 @@ def rebind_proposal(args, state, state_path):
     binding = state.get("git")
     completed = [run for run in prior_runs if "batch_completed_at" in run]
     unit, plan, approval, receipt = approved_build_plan(args.build_plan, args.evidence,
-                                                        completed=[run["batch_id"] for run in completed])
+                                                        completed=[runtime.execution_scope_id(run) for run in completed])
     if completed:
         verify_completed_plan(Path(plan["path"]).read_text(encoding="utf-8"), completed, state)
         runtime.Runtime(state, None, verify_report_layout, state_path=state_path).verify_completed_batches()
@@ -748,7 +756,7 @@ def rebind_proposal(args, state, state_path):
         raise ValueError("declared unit Git root requires a fresh unit-scoped Building init")
     ref = approval["user_message_ref"]
     prior_refs = {entry["building_audit"]["binding"]["spec_approval_ref"] for entry in prior_runs}
-    prior_refs.update(runtime.earlier_batched_run_message_refs(state, approval.get("batch_id")))
+    prior_refs.update(runtime.earlier_batched_run_message_refs(state, runtime.execution_scope_id(approval)))
     prior = prior_runs[-1]
     if "batch_completed_at" in prior:
         eligible_at = prior["batch_completed_at"]

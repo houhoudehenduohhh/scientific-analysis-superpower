@@ -19,6 +19,7 @@ def now():
 class BatchedScenario(Scenario):
     def __init__(self, root):
         self.root = self.unit = root
+        self.node_based = False
         self.state = state_path(root)
         self.plan, first = write_proposal(root)
         self.tasks = {"T01": first}
@@ -55,21 +56,27 @@ class BatchedScenario(Scenario):
 
     def approval(self, batch, *task_ids, approved_at=None, message_ref=None):
         return self.file(f".tmp/{batch}-approval.json", {
-            "batch_id": batch, "build_plan_sha256": fingerprint(self.plan),
+            ("node_id" if self.node_based else "batch_id"): batch, "build_plan_sha256": fingerprint(self.plan),
             "task_specs": {task: fingerprint(self.tasks[task]) for task in task_ids},
             "approved_at": approved_at or now(), "user_message_ref": message_ref or f"user-spec-{batch}",
         })
 
-    def build(self, batch, task_id, *, denied_message_ref=None, reject_worktree_report=False, legacy_report=False):
+    def build(self, batch, task_id, *, denied_message_ref=None, audit_suffix="",
+              reject_worktree_report=False, legacy_report=False, spec_approval_ref=None):
         self.batch = batch
-        self.directory = self.state.parent.relative_to(self.root) / "building" / batch
-        self.runtime_dir = self.state.parent.relative_to(self.root) / "runtime" / batch
+        first = batch in {"B01", "N01"}
+        step_nodes = ("N01", "N01", "N02") if self.node_based else ("N01", "N02", "N03")
+        node_order = list(dict.fromkeys(step_nodes))
+        nodes = {node: {"needs": [node_order[index - 1]] if index else []}
+                 for index, node in enumerate(node_order)}
+        self.directory = self.state.parent.relative_to(self.root) / "building" / (batch + audit_suffix)
+        self.runtime_dir = self.state.parent.relative_to(self.root) / "runtime" / (batch + audit_suffix)
         spec = self.tasks[task_id]
         self.cli("register-task", task_id, "--action", "resume_or_redispatch_implementer", "--evidence", spec)
         base = git(self.root, "rev-parse", "HEAD").stdout.strip()
-        script = self.file("scripts/build/" + ("main.py" if batch == "B01" else "next.py"),
+        script = self.file("scripts/build/" + ("main.py" if first else "next.py"),
                            "import pathlib, sys\nsource, target = map(pathlib.Path, sys.argv[1:])\n"
-                           "target.write_text(source.read_text() + '!')\n")
+                           "target.write_text(source.read_text() + '!')\n" + f"# cycle: {audit_suffix}\n")
         git(self.root, "add", script)
         git(self.root, "commit", "--quiet", "-m", f"build {batch}")
         head = git(self.root, "rev-parse", "HEAD").stdout.strip()
@@ -82,19 +89,18 @@ class BatchedScenario(Scenario):
             evidence = ["--evidence", self.file(self.directory / (status + ".md"), content)] if content else []
             self.cli("transition", "--to", status, *evidence)
         self.contract = {
-            "run_id": batch, "code_root": str(self.root), "code_commit": head,
+            "run_id": batch + audit_suffix, "code_root": str(self.root), "code_commit": head,
             "build_plan_sha256": fingerprint(self.plan), "task_specs": {task_id: fingerprint(spec)},
             "inputs": {"source": {"path": "input.txt", "sha256": fingerprint(self.source),
                                   "identity": "synthetic fixture", "qualification": "test fixture"}},
-            "nodes": {"N01": {"needs": []}, "N02": {"needs": ["N01"]}} if batch == "B01"
-            else {"N03": {"needs": ["N02"]}},
+            "nodes": {node: nodes[node] for node in (set(step_nodes[:2]) if first else {step_nodes[2]})},
             "steps": {},
         }
         paths = ["results/data/region/status.csv", "results/data/second.csv", "results/data/third.csv"]
-        for i in ([1, 2] if batch == "B01" else [3]):
+        for i in ([1, 2] if first else [3]):
             source = "{input:source}" if i == 1 else "{upstream:R" + f"{i-1:02d}:" + paths[i-2] + "}"
             self.contract["steps"][f"R{i:02d}"] = {
-                "node": f"N{i:02d}", "task_id": task_id, "acs": [task_id + "-AC01"],
+                "node": step_nodes[i - 1], "task_id": task_id, "acs": [task_id + "-AC01"],
                 "needs": [f"R{i-1:02d}"] if i > 1 else [], "inputs": ["source"] if i == 1 else [],
                 "outputs": [paths[i-1]], "executable_sha256": fingerprint(Path(sys.executable)),
                 "resources": {"timeout_seconds": 15},
@@ -102,11 +108,11 @@ class BatchedScenario(Scenario):
                             "{output:" + paths[i-1] + "}"],
             }
         report = (TEMPLATES / "building-audit-report.md").read_text(encoding="utf-8")
-        report = report.replace("<当前审计 ID>", "building-" + batch).replace(
+        report = report.replace("<当前审计 ID>", "building-" + batch + audit_suffix).replace(
             "assessment: PASS | PASS_WITH_NOTES | CHANGES_REQUIRED | BLOCKED", "assessment: PASS")
         report = report.replace("`limitations: []`（填写用户需接受的限制，使用 JSON 字符串数组）", "`limitations: []`")
         report = report.replace("| | | | | |\n\n## 审计门禁记录", f"{AUDIT_ROW.replace('T01', task_id)}\n\n## 审计门禁记录")
-        relative_report = Path(f"audits/building/{batch}.md")
+        relative_report = Path(f"audits/building/{batch}{audit_suffix}.md")
         if reject_worktree_report:
             for invalid in (self.root / relative_report, self.unit / relative_report.parent / "nested" / relative_report.name):
                 misplaced = self.file(invalid, report)
@@ -133,18 +139,20 @@ class BatchedScenario(Scenario):
         })
         self.cli("gate", "--evidence", gate)
         self.building = {
-            "audit_id": "building-" + batch, "report_sha256": fingerprint(report_path), "assessment": "PASS",
+            "audit_id": "building-" + batch + audit_suffix, "report_sha256": fingerprint(report_path), "assessment": "PASS",
             **{key: self.contract[key] for key in ("code_commit", "build_plan_sha256", "task_specs")},
             "contract_sha256": fingerprint(contract_path), "report_presented_at": now(),
-            "accepted_at": now(), "acceptance_ref": f"user-building-{batch}", "spec_approval_ref": f"user-spec-{batch}",
-            "audit_user_decision": "accepted", "accepted_audit_id": "building-" + batch,
+             "accepted_at": now(), "acceptance_ref": f"user-building-{batch}{audit_suffix}",
+            "spec_approval_ref": spec_approval_ref or f"user-spec-{batch}",
+            "audit_user_decision": "accepted", "accepted_audit_id": "building-" + batch + audit_suffix,
             "limitations": [], "accepted_limitations": [],
         }
         if denied_message_ref:
             stale = {**self.building, "acceptance_ref": denied_message_ref}
             self.cli("runtime-init", "--artifact", contract_path, "--evidence",
                      self.attachment("building-stale", stale), denied="already used")
-        self.cli("runtime-init", "--artifact", contract_path, "--evidence", self.attachment("building", self.building))
+        self.cli("runtime-init", "--artifact", contract_path,
+                 "--evidence", self.attachment("building", self.building))
 
     def attachment(self, name, data):
         return self.file(self.runtime_dir / "evidence" / (name + ".json"), data)
@@ -156,16 +164,18 @@ class BatchedScenario(Scenario):
         })
         self.cli("runtime-authorize", "--evidence", evidence, denied=denied)
 
-    def run_and_review(self, step, actor="executor"):
+    def run_and_review(self, step, actor="executor", *, route=None):
         attempt = self.cli("runtime-run", step, "--actor", actor)
         ac = self.contract["steps"][step]["acs"][0]
-        fields = {"step_run_hash": attempt["step_run_hash"], "verdict": "PASS", "return_stage": "none",
-                  "ac_statuses": json.dumps({ac: "PASS"})}
+        verdict = "CHANGES_REQUIRED" if route else "PASS"
+        ac_statuses = {ac: verdict}
+        fields = {"step_run_hash": attempt["step_run_hash"], "verdict": verdict, "return_stage": route or "none",
+                  "ac_statuses": json.dumps(ac_statuses)}
         report = self.file(self.runtime_dir / "reviews" / (step + ".md"), "# Runtime Task Review\n" +
                            "\n".join(f"- `{key}: {value}`" for key, value in fields.items()))
         self.cli("runtime-review", step, "--evidence", self.attachment("review-" + step, {
-            "step_run_hash": attempt["step_run_hash"], "reviewer": "step-reviewer", "verdict": "PASS",
-            "acs": {ac: "PASS"}, "route": None, "report": str(report),
+            "step_run_hash": attempt["step_run_hash"], "reviewer": "step-reviewer", "verdict": verdict,
+            "acs": ac_statuses, "route": route, "report": str(report),
         }))
         return attempt
 
@@ -174,9 +184,12 @@ class BatchedScenario(Scenario):
             self.cli("runtime-report", name)
         scope = self.cli("runtime-scope", name)
         rows = []
-        for number in (range(1, 4) if name == "final_chain" else [int(name[1:])]):
+        step_nodes = ("N01", "N01", "N02") if self.node_based else ("N01", "N02", "N03")
+        for number, node in enumerate(step_nodes, 1):
+            if name not in {node, "final_chain"}:
+                continue
             task = "T02" if number == 3 else "T01"
-            rows.append(f"| {task}、R{number:02d}、N{number:02d} | Fixture | {task}-AC01 | PASS |")
+            rows.append(f"| {task}、R{number:02d}、{node} | Fixture | {task}-AC01 | PASS |")
         report = AUDIT_TEMPLATE.read_text(encoding="utf-8")
         report = report.replace("| | | | |\n\n## 审计门禁记录",
                                 "\n".join(rows) + "\n\n## 审计门禁记录")
@@ -352,3 +365,92 @@ def test_linked_worktree_keeps_registered_legacy_report_paths(tmp_path):
     accepted = json.loads(case.state.read_text(encoding="utf-8"))["runtime"]["audits"]["N01"]
     assert accepted["report"] == old_audit["report"]
     assert accepted["report"]["sha256"] == fingerprint(legacy)
+
+
+NODE_HEADER = ("| 节点 ID | 节点目的 | 前置建设要求 | 包含的 Task | "
+               "包含的运行步骤 | 阶段性成果与验收条件 |")
+
+
+def convert_to_node_plan(case):
+    case.node_based = True
+    plan = case.plan.read_text(encoding="utf-8")
+    start = plan.index("| 节点 ID |")
+    end = plan.index("## 批准", start)
+    plan = plan[:start] + NODE_HEADER + (
+        "\n|---|---|---|---|---|---|\n"
+        "| N01 | Count | 无 | T01 | R01、R02 | Outputs |\n"
+        "| N02 | Count | N01 已验收 | T02 | R03 | Outputs |\n\n"
+    ) + plan[end:]
+    case.file(case.plan, plan.replace("| R02 | T01 | R01、N01 |", "| R02 | T01 | R01 |")
+              .replace("| R03 | T02 | R02、N02 |", "| R03 | T02 | R02 |"))
+
+
+def test_node_plan_uses_one_prerequisite_column_and_explicit_task_scope(tmp_path):
+    case = BatchedScenario(tmp_path)
+    convert_to_node_plan(case)
+    case.cli("verify-build-plan", "--artifact", case.plan)
+    replace(case.plan, "| N02 | Count | N01 已验收 |", "| N02 | Count | 无 |")
+    case.cli("verify-build-plan", "--artifact", case.plan, denied="undeclared prerequisite node N01")
+    replace(case.plan, "| N02 | Count | 无 | T02 |", "| N02 | Count | N01 已验收 | T01、T02 |")
+    case.cli("verify-build-plan", "--artifact", case.plan, denied="duplicate Task T01")
+
+
+def test_accepted_node_survives_downstream_return_and_final_audit(tmp_path):
+    case = BatchedScenario(tmp_path)
+    convert_to_node_plan(case)
+    git(tmp_path, "add", "specs")
+    git(tmp_path, "commit", "--quiet", "-m", "use node scope")
+    case.cli("init", "--build-plan", case.plan, "--evidence", case.approval("N02", "T02"),
+             denied="eligible node_id N01")
+    case.cli("init", "--build-plan", case.plan, "--evidence", case.approval("N01", "T01", "T02"),
+             denied="exactly the eligible Task")
+    case.cli("init", "--build-plan", case.plan, "--evidence", case.approval("N01", "T01"))
+    analysis_manifest = case.state.parent / "analysis-state.json"
+    assert json.loads(analysis_manifest.read_text(encoding="utf-8"))["node_id"] == "N01"
+    case.build("N01", "T01")
+    case.cli("runtime-next-batch", denied="uses runtime-next-node")
+    case.cli("runtime-next-node", denied="accept the current Runtime node")
+    case.authorize_steps("R01", "R02")
+    case.run_and_review("R01")
+    case.run_and_review("R02")
+    upstream_audit = case.audit_scope("N01")
+    case.accept_scope("N01", upstream_audit)
+    case.cli("allowed", "advance_next_node")
+    assert case.cli("runtime-next-node")["next_node"] == "N02"
+    handoff = json.loads(analysis_manifest.read_text(encoding="utf-8"))
+    assert handoff["next_node"] == "N02" and "node_id" not in handoff
+    replace(case.tasks["T02"], "approval_status: pending", "approval_status: approved")
+    case.cli("proposal-rebind", "--build-plan", case.plan, "--evidence", case.approval("N02", "T02"))
+    rebound = json.loads(analysis_manifest.read_text(encoding="utf-8"))
+    assert rebound["node_id"] == "N02" and "next_node" not in rebound
+    git(tmp_path, "add", "specs")
+    git(tmp_path, "commit", "--quiet", "-m", "approve downstream node")
+    case.build("N02", "T02")
+    case.authorize_steps("R03")
+    attempt = case.run_and_review("R03", route="Proposal")
+    case.cli("runtime-return", "R03", "--evidence", case.attachment("return", {
+        "step_run_hash": attempt["step_run_hash"], "route": "Proposal", "reason": "revise downstream",
+        "user_message_ref": "user-reopens-N02", "decided_at": now(),
+    }))
+    replace(case.plan, "| T02 | scripts/build/next.py | 新增 |", "| T02 | scripts/build/next.py | 既有 |")
+    approval = case.approval("N02", "T02", message_ref="user-revised-N02")
+    case.cli("proposal-rebind", "--build-plan", case.plan, "--evidence", approval)
+    git(tmp_path, "add", "specs")
+    git(tmp_path, "commit", "--quiet", "-m", "revise downstream setup")
+    case.build("N02", "T02", audit_suffix="-r02", spec_approval_ref="user-revised-N02")
+    case.authorize_steps("R03", message_ref="user-reruns-R03")
+    result = case.run_and_review("R03")
+    assert Path(result["outputs"]["results/data/third.csv"]["path"]).read_text(encoding="utf-8") == "synthetic!!!"
+    case.accept_scope("N02", case.audit_scope("N02"))
+    scope = case.cli("runtime-scope", "final_chain")
+    assert [node["node_id"] for node in scope["nodes"]] == ["N01", "N02"]
+    assert scope["nodes"][0]["audit_id"] == upstream_audit["audit_id"]
+    original = Path(scope["outputs"]["R02"]["results/data/second.csv"]["path"])
+    saved = original.read_bytes()
+    original.write_bytes(b"changed")
+    case.cli("runtime-scope", "final_chain", denied="fingerprint changed")
+    original.write_bytes(saved)
+    case.accept_scope("final_chain", case.audit_scope("final_chain"))
+    delivery = case.cli("runtime-finish", "--artifact",
+                        case.file("reports/finish.md", "# Synthetic\n\n## 阶段性结果\n\nFixture\n\n## 结果局限\n\nSynthetic"))
+    assert set(delivery["result_manifest"]) == {"R01", "R02", "R03"}
