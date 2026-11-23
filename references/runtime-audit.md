@@ -31,7 +31,7 @@ Runtime 有两类正式审计：Build Plan 指定的**阶段性验收节点审�
 
 用 Harness `runtime-scope` 取得当前节点或 `final_chain` 的审查范围及哈希。独立审查完毕后用 `runtime-audit` 登记正式报告；用户看到报告后作出具体裁决，协调者再用 `runtime-accept` 登记当前版本的接受记录。详见 [Runtime Harness 命令](sdd-harness.md#runtime-命令)。
 
-在 `audits/runtime/` 生成与节点 `run_hash` 或最终 `chain_hash` 绑定的 Markdown 报告，例如 `audits/runtime/runtime_audit_<node或final_chain>_<sequence>_<date>.md`。标明 `audit_scope: milestone | final_chain`、节点与步骤集合、完整 `runtime_audit_id`、上游审计 ID、获批规格版本、发现与返回阶段、审查结论和 `audit_user_decision: pending`。完整范围和报告文件指纹登记到运行工作区的审计 JSON，由 Harness 接入现有 Manifest。多轮审计用序号和日期区分；旧报告保留，不能把新运行写成旧报告的结果。
+在获批功能单元根目录的 `audits/runtime/` 直接生成与节点 `run_hash` 或最终 `chain_hash` 绑定的 Markdown 报告，例如 `audits/runtime/runtime_audit_<node或final_chain>_<sequence>_<date>.md`。标明 `audit_scope: milestone | final_chain`、节点与步骤集合、完整 `runtime_audit_id`、上游审计 ID、获批规格版本、发现与返回阶段、审查结论和 `audit_user_decision: pending`。完整范围和报告文件指纹登记到运行工作区的审计 JSON，由 Harness 接入现有 Manifest。多轮审计用序号和日期区分；旧报告保留，不能把新运行写成旧报告的结果。
 
 第六节用可读文字汇总任务、步骤、节点、阶段结果、AC 判定、未覆盖范围及当前状态。尝试、审查和逐文件指纹由 Manifest 及绑定证据提供。节点接受时 Harness 核对受审候选字节，并在 `results/{data,plot,smoke_test}/<run_id>/` 发布已接受的结果。已发布节点若在本轮获准复跑并再次通过审计，冲突结果以 `<run_id>-rNN` 发布，既有结果继续留存。最终审计和交付核对发布路径及真实字节。
 

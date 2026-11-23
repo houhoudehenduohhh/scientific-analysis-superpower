@@ -44,7 +44,7 @@ Task Review 返回 `CHANGES_REQUIRED` 或存在 Critical/Important finding 时�
 | 最终全链条审计已生成但用户尚未接受当前最终报告 | **最终门禁等待** → 呈现结论、限制与返回建议 | 不交付，也不沿用旧版本的接受。 |
 | 最终全链条审计已获接受，结果仍对应被审 `chain_hash` | **Runtime Finish** → [交付规则](references/runtime-finish.md) 与 [交付模板](templates/runtime-finish-report.md) | 只整理已审结果、复现信息与解释限制；交付后完成本功能单元。 |
 
-SDD 在当前建设范围内的任务全部完成后执行整体 Review。初审及最多一次自动修复、复审属于 Building Audit 形成前的内部证据，不设正式 `audit_id`；只有含任务验收索引的最终报告写入 `audits/building/` 后才触发用户门禁，**必须停在该报告，不能顺延 Runtime**。已有正式报告且用户裁决仍为 `pending` 时，不得借用自动修复规则继续返工。会话中断时依据 SDD 账本恢复未完成的审查，不重做已完成任务。
+SDD 在当前建设范围内的任务全部完成后执行整体 Review。初审及最多一次自动修复、复审属于 Building Audit 形成前的内部证据，不设正式 `audit_id`；只有含任务验收索引的最终报告写入获批功能单元根目录的 `audits/building/` 后才触发用户门禁，**必须停在该报告，不能顺延 Runtime**。已有正式报告且用户裁决仍为 `pending` 时，不得借用自动修复规则继续返工。会话中断时依据 SDD 账本恢复未完成的审查，不重做已完成任务。
 
 ## 用户门禁
 

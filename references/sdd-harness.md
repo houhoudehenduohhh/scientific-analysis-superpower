@@ -48,6 +48,12 @@ python <Harness路径> init <WORKTREE>/.tmp/sdd/<计划名>/state.json --build-p
 
 本批节点全部获接受且还有后续批次时，调用 `runtime-next-batch` 归档本批规格和已验收的 Runtime，再通过 `proposal-rebind` 登记下一批的新批准。新批次使用独立的 Building 证据路径、审计编号、运行合同和 `run_id`。上游交接以原审计和已发布产物的指纹为准。旧批次证据缺失或不符时，恢复原路径上的同版本证据再继续。若确需重做已完成的批次，从受影响批次另建获批周期。当前批次交接只支持向后推进。旧版节点表沿用单次 Building Audit 流程。
 
+## 正式审计与工作区
+
+正式 Building Audit 和 Runtime Audit 使用 Build Plan 批准的功能单元 Git 根目录，分别直接写入 `audits/building/` 和 `audits/runtime/`。即使代码或测试在隔离的 worktree 中执行，正式报告也使用该固定位置。每次登记新报告用独立的新文件名。审查草稿、日志、账本、Runtime 事实报告和 JSON 回执留在执行工作树下的 SDD 工作区。
+
+此前已登记的报告按原绝对路径和指纹复核。继续执行或恢复时保留原报告和已登记的引用。
+
 ## Runtime 命令
 
 沿用同一 `state.json` 和 `sdd-harness.py`。命令表中的动作都使用 `python <Harness路径> <state.json> <命令>`。

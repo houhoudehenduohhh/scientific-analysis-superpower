@@ -18,7 +18,7 @@ def now():
 
 class BatchedScenario(Scenario):
     def __init__(self, root):
-        self.root = root
+        self.root = self.unit = root
         self.state = state_path(root)
         self.plan, first = write_proposal(root)
         self.tasks = {"T01": first}
@@ -60,7 +60,7 @@ class BatchedScenario(Scenario):
             "approved_at": approved_at or now(), "user_message_ref": message_ref or f"user-spec-{batch}",
         })
 
-    def build(self, batch, task_id, *, denied_message_ref=None):
+    def build(self, batch, task_id, *, denied_message_ref=None, reject_worktree_report=False, legacy_report=False):
         self.batch = batch
         self.directory = self.state.parent.relative_to(self.root) / "building" / batch
         self.runtime_dir = self.state.parent.relative_to(self.root) / "runtime" / batch
@@ -106,8 +106,24 @@ class BatchedScenario(Scenario):
             "assessment: PASS | PASS_WITH_NOTES | CHANGES_REQUIRED | BLOCKED", "assessment: PASS")
         report = report.replace("`limitations: []`（填写用户需接受的限制，使用 JSON 字符串数组）", "`limitations: []`")
         report = report.replace("| | | | | |\n\n## 审计门禁记录", f"{AUDIT_ROW.replace('T01', task_id)}\n\n## 审计门禁记录")
-        report_path = self.file(f"audits/building/{batch}.md", report)
-        self.cli("transition", "--to", "building_audit_gate", "--evidence", report_path)
+        relative_report = Path(f"audits/building/{batch}.md")
+        if reject_worktree_report:
+            for invalid in (self.root / relative_report, self.unit / relative_report.parent / "nested" / relative_report.name):
+                misplaced = self.file(invalid, report)
+                before = self.state.read_bytes()
+                self.cli("transition", "--to", "building_audit_gate", "--evidence", misplaced,
+                         denied="formal Building Audit")
+                assert self.state.read_bytes() == before
+        if legacy_report:
+            report_path = self.file(relative_report, report)
+            state = json.loads(self.state.read_text(encoding="utf-8"))
+            state.update(status="building_audit_gate", phase="building_audit",
+                         next_allowed_actions=["wait_for_user_decision"])
+            state["evidence"]["building_audit"] = [{"path": str(report_path), "sha256": fingerprint(report_path)}]
+            self.file(self.state, state)
+        else:
+            report_path = self.file(self.unit / relative_report, report)
+            self.cli("transition", "--to", "building_audit_gate", "--evidence", report_path)
         contract_path = self.attachment("contract", self.contract)
         gate = self.file(self.directory / "gate.json", {
             "ledger": str(self.file(self.directory / "progress.md",
@@ -153,7 +169,7 @@ class BatchedScenario(Scenario):
         }))
         return attempt
 
-    def audit_scope(self, name, *, auditor="independent-auditor", denied=None):
+    def audit_scope(self, name, *, auditor="independent-auditor", denied=None, reject_worktree_report=False):
         if name != "final_chain":
             self.cli("runtime-report", name)
         scope = self.cli("runtime-scope", name)
@@ -170,11 +186,20 @@ class BatchedScenario(Scenario):
                                 "runtime_audit_status: PASS")
         report = report.replace("return_stage: Proposal | Building | Runtime | none", "return_stage: none")
         report = report.replace("`limitations: []`（将接受范围内的限制写为 JSON 字符串数组，单独成行）", "`limitations: []`")
-        report_path = self.file(f"audits/runtime/{name}.md", report)
-        return self.cli("runtime-audit", name, "--evidence", self.attachment("audit-" + name, {
+        relative_report = Path("audits/runtime") / (name + ".md")
+        report_path = self.file(self.unit / relative_report, report)
+        receipt = {
             "scope_hash": scope["scope_hash"], "auditor": auditor, "report": str(report_path),
             "report_sha256": fingerprint(report_path), "assessment": "PASS", "limitations": [], "route": None,
-        }), denied=denied)
+        }
+        if reject_worktree_report:
+            misplaced = self.file(relative_report, report)
+            before = self.state.read_bytes()
+            self.cli("runtime-audit", name, "--evidence",
+                     self.attachment("misplaced-" + name, {**receipt, "report": str(misplaced)}),
+                     denied="formal Runtime Audit")
+            assert self.state.read_bytes() == before
+        return self.cli("runtime-audit", name, "--evidence", self.attachment("audit-" + name, receipt), denied=denied)
 
     def accept_scope(self, name, audit, *, denied=None, message_ref=None):
         self.cli("runtime-accept", name, "--evidence", self.attachment("accept-" + name, {
@@ -272,3 +297,58 @@ def test_current_build_does_not_change_another_batch_main_entry(tmp_path, monkey
     out_of_scope = git(tmp_path, "rev-parse", "HEAD").stdout.strip()
     with pytest.raises(ValueError, match="main entry changed outside the current Building batch"):
         verify_building_paths(tmp_path, scenario.plan, baseline, out_of_scope, task_ids={"T01"})
+
+
+def linked_case(tmp_path):
+    case = BatchedScenario(tmp_path)
+    linked = tmp_path / ".tmp/worktrees/linked"
+    linked.parent.mkdir(parents=True)
+    git(tmp_path, "worktree", "add", "--detach", str(linked))
+    approval = case.approval("B01", "T01")
+    case.file(approval, {**json.loads(approval.read_text(encoding="utf-8")), "worktree_path": str(linked)})
+    case.root, case.state = linked, state_path(linked)
+    case.cli("init", "--build-plan", case.plan, "--evidence", approval)
+    return case
+
+
+def test_linked_worktree_registers_formal_audits_only_at_functional_unit_root(tmp_path):
+    case = linked_case(tmp_path)
+    case.build("B01", "T01", reject_worktree_report=True)
+    case.authorize_steps("R01")
+    case.run_and_review("R01")
+    audit = case.audit_scope("N01", reject_worktree_report=True)
+    case.accept_scope("N01", audit)
+    state = json.loads(case.state.read_text(encoding="utf-8"))
+    assert Path(state["evidence"]["building_audit"][0]["path"]) == tmp_path / "audits/building/B01.md"
+    assert Path(state["runtime"]["audits"]["N01"]["report"]["path"]) == tmp_path / "audits/runtime/N01.md"
+    assert Path(state["runtime"]["audits"]["N01"]["summary"]["path"]).is_relative_to(case.state.parent)
+
+
+def test_linked_worktree_keeps_registered_legacy_report_paths(tmp_path):
+    case = linked_case(tmp_path)
+    case.build("B01", "T01", legacy_report=True)
+    building = case.root / "audits/building/B01.md"
+    state = json.loads(case.state.read_text(encoding="utf-8"))
+    assert Path(state["runtime"]["building_audit"]["report"]["path"]) == building
+    assert state["runtime"]["building_audit"]["report"]["sha256"] == fingerprint(building)
+
+    case.authorize_steps("R01")
+    case.run_and_review("R01")
+    audit = case.audit_scope("N01")
+    # Reconstruct the already registered report and matching receipt from the old layout.
+    formal = Path(audit["report"]["path"])
+    legacy = case.root / "audits/runtime/N01.md"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    formal.rename(legacy)
+    state = json.loads(case.state.read_text(encoding="utf-8"))
+    old_audit = state["runtime"]["audits"]["N01"]
+    old_audit["report"]["path"] = str(legacy)
+    receipt = Path(old_audit["receipt"]["path"])
+    old_receipt = json.loads(receipt.read_text(encoding="utf-8"))
+    case.file(receipt, {**old_receipt, "report": str(legacy)})
+    old_audit["receipt"].update(sha256=fingerprint(receipt), bytes=receipt.stat().st_size)
+    case.file(case.state, state)
+    case.accept_scope("N01", audit)
+    accepted = json.loads(case.state.read_text(encoding="utf-8"))["runtime"]["audits"]["N01"]
+    assert accepted["report"] == old_audit["report"]
+    assert accepted["report"]["sha256"] == fingerprint(legacy)
