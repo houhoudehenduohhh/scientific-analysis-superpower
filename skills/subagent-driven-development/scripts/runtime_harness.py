@@ -155,6 +155,31 @@ def inside(root, value, parent):
     return path
 
 
+def formal_audit_path(state, worktree, value, phase):
+    import sdd_unit_git as unit_git
+
+    unit_root = Path(state.get("git", {}).get("unit_root", worktree))
+    parent = unit_root / "audits" / phase
+    candidate = unit_root / text(value, "formal audit report path")
+    label = f"formal {phase.title()} Audit"
+    require(candidate.suffix.lower() == ".md" and candidate.parent == parent,
+            f"{label} must be Markdown directly in {parent}")
+    canonically_inside(candidate, parent)
+    unit_git.inside(candidate, unit_root, label, unit_paths=True)
+    unit_git.reject_hardlink(candidate)
+    return candidate
+
+
+def registered_building_audit_path(state, worktree, record):
+    # A registered report predates this registration attempt. Preserve both its
+    # original path and its fingerprint, including earlier worktree-local reports.
+    verify_file(record)
+    unit_root = Path(state.get("git", {}).get("unit_root", worktree))
+    if Path(record["path"]).is_relative_to(unit_root / "audits" / "building"):
+        return inside(unit_root, record["path"], "audits/building")
+    return inside(worktree, record["path"], "audits/building")
+
+
 def file_binding(root, value):
     value = objects(value, "file binding")
     matches(value.get("sha256"), SHA256, "file SHA-256")
@@ -706,15 +731,16 @@ def record_building_gate(state, root, evidence_path, verify_report_layout, *, ev
                 "Building gate requires every Task in the current Spec approval")
     audit = state["evidence"].get("building_audit", [])
     require(len(audit) == 1, "Building gate requires current formal Building Audit")
-    report = inside(root, audit[0]["path"], "audits/building")
+    report = registered_building_audit_path(state, root, audit[0])
     verify_report_layout(report, "building")
     audit_text = report.read_text(encoding="utf-8")
     plan_path = Path(state["refs"]["build_plan"]["path"])
     structured = sdd_layout.structured_plan(plan_path.read_text(encoding="utf-8"))
     task_ids = tasks.keys() if state.get("spec_approval", {}).get("batch_id") else None
     if structured:
-        require(report.parent == root / "audits" / "building" and report.suffix == ".md",
-                "formal Building Audit must be Markdown directly in audits/building")
+        unit_root = Path(state.get("git", {}).get("unit_root", root))
+        require(report.parent in {root / "audits/building", unit_root / "audits/building"}
+                and report.suffix.lower() == ".md", "formal Building Audit must be Markdown directly in audits/building")
         sdd_layout.verify_acceptance_index(audit_text, plan_path, task_ids=task_ids)
     final_review = verify_overall_review(state, state["evidence"].get("building_audit_pending", []),
                                          commit, audit=audit)
@@ -942,7 +968,7 @@ class Runtime:
                 target = canonically_inside(root / "results" / category / contract["run_id"], root / "results")
                 require(not target.exists(), f"published Runtime run_id already exists: {target}")
         verify_building_gate(self.state.get("building_gate"), self.state, root, contract["code_commit"])
-        report = inside(root, reports[0]["path"], "audits/building")
+        report = registered_building_audit_path(self.state, root, reports[0])
         require(report.suffix.lower() == ".md", "Building Audit report must be Markdown")
         require(evidence.get("report_sha256") == reports[0]["sha256"], "Building Audit report binding mismatch")
         audit_id = matches(evidence.get("audit_id"), ID, "Building audit_id")
@@ -1433,13 +1459,11 @@ class Runtime:
         require(verdict in PASS | FAIL, "invalid Runtime Audit assessment")
         limits = validate_limits(audit)
         review_route(audit, verdict)
-        report = inside(self.root, audit.get("report"), "audits/runtime")
-        require(report.suffix.lower() == ".md" and report.parent == self.root / "audits/runtime",
-                "formal Runtime Audit must be Markdown directly in audits/runtime")
+        report = formal_audit_path(self.state, self.root, audit.get("report"), "runtime")
         report_record = fingerprint(report)
         earlier_reports = [item["report"] for item in [*self.data["archived_audits"], *self.data["audits"].values()]]
-        if name == "final_chain":
-            earlier_reports.extend(run.data["audits"][node]["report"] for node, run in self.previous_nodes.items())
+        for run in self.state.get("runtime_history", []):
+            earlier_reports.extend(item["report"] for item in [*run["archived_audits"], *run["audits"].values()])
         execution_reports = [record["facts"]["report"] for attempts in relevant.values() for record in attempts]
         step_reviews = [record["review"]["report"] for attempts in relevant.values() for record in attempts]
         distinct_file(report_record, [*earlier_reports, *execution_reports, *step_reviews, *([summary] if summary else [])],

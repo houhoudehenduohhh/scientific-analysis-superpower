@@ -785,12 +785,20 @@ def _main(args, path):
             raise SystemExit(str(exc)) from None
 
     def building_records(raw, *, audit=False):
+        if binding and audit:
+            import runtime_harness
+
+            try:
+                reports = [runtime_harness.formal_audit_path(state, selected_worktree, value, "building")
+                           for value in raw.split(",") if value]
+            except (ValueError, OSError) as exc:
+                raise SystemExit(str(exc)) from None
+            return [evidence_record(report) for report in reports]
         records = evidence_records(raw)
         if binding:
-            location = selected_worktree / "audits" / "building" if audit else path.parent.resolve()
             for record in records:
                 try:
-                    unit_git.inside(record["path"], location, "Building evidence", unit_paths=True)
+                    unit_git.inside(record["path"], path.parent.resolve(), "Building evidence", unit_paths=True)
                     unit_git.inside(record["path"], selected_worktree, "Building evidence", unit_paths=True)
                 except ValueError as exc:
                     raise SystemExit(str(exc)) from None
@@ -987,6 +995,12 @@ def _main(args, path):
         if binding:
             try:
                 verify_report_layout(records[0]["path"], "building")
+                import runtime_harness as runtime
+
+                new_report = records[0]
+                historical_reports = [report for item in state.get("building_history", [])
+                                      for report in item["evidence"].get("building_audit", [])]
+                runtime.distinct_file(new_report, historical_reports, "formal Building Audit")
             except SystemExit as exc:
                 raise SystemExit(f"Building Audit report layout: {exc}") from None
     if records and target in EVIDENCE_REQUIRED:
