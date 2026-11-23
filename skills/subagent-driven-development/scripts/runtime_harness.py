@@ -1238,11 +1238,11 @@ class Runtime:
         require(timestamp(approval.get("authorized_at")) >= timestamp(binding["accepted_at"]),
                 "Runtime authorization must occur at or after Building Audit acceptance")
         message_ref = text(approval.get("user_message_ref"), "Runtime authorization user message reference")
+        require_fresh_batch_message_ref(self.state, self.data.get("batch_id"), message_ref,
+                                        "Runtime authorization", include_building_acceptance=False)
         if self.state.get("building_runtime_contract") is not None:
             require(message_ref != binding["spec_approval_ref"],
                     "Runtime authorization must use a separate message from Spec approval")
-        require_fresh_batch_message_ref(self.state, self.data.get("batch_id"), message_ref,
-                                        "Runtime authorization", include_building_acceptance=False)
         require(all(message_ref != entry["approval"]["user_message_ref"]
                     for run in self.state.get("runtime_history", []) for entry in run["authorizations"]),
                 "new Runtime cycle requires fresh scoped authorization")
