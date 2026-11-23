@@ -85,8 +85,8 @@ def test_publication_rolls_back_when_second_output_cannot_be_linked(tmp_path, mo
     assert all(binding(Path(output["path"])) == output for output in outputs.values())
 
 
-@pytest.mark.parametrize("reopen", [False, True])
-def test_structured_proposal_to_runtime_finish(proposal, tmp_path, reopen):
+@pytest.mark.parametrize("reopen, historical_null", [(False, False), (True, False), (False, True)])
+def test_structured_proposal_to_runtime_finish(proposal, tmp_path, reopen, historical_null):
     plan, task = proposal
     project = Scenario.__new__(Scenario)
     project.root = tmp_path
@@ -151,20 +151,119 @@ def test_structured_proposal_to_runtime_finish(proposal, tmp_path, reopen):
     old_index_end = building_template.index("## 审计门禁记录", old_index_start)
     index = "## 6. 任务验收索引\n\n" + AUDIT_HEADER + "\n|---|---|---|---|---|\n" + AUDIT_ROW + "\n\n"
     report = put("audits/building/building.md", building_template[:old_index_start] + index + building_template[old_index_end:])
-    project.cli("transition", "--to", "building_audit_gate", "--evidence", report)
     gate = put(workspace / "building/gate.json", {
         "ledger": str(put(workspace / "building/progress.md",
                           f"Task T01: complete (commits {base}..{head}, review clean) · {fingerprint(task)}")),
         "tasks": {"T01": {"brief": str(put(workspace / "building/brief.md", task.read_text(encoding="utf-8")))}},
     })
     gate_data = json.loads(gate.read_text(encoding="utf-8"))
+    before = project.state.read_bytes()
+    project.cli("transition", "--to", "building_audit_gate", "--evidence", report,
+                denied="passing Building Audit requires a verified Runtime contract")
+    assert project.state.read_bytes() == before
+    contract_data = json.loads(contract.read_text(encoding="utf-8"))
+    put(contract, contract_data | {"code_commit": "0" * 40})
+    project.cli("transition", "--to", "building_audit_gate", "--evidence", report, "--artifact", contract,
+                denied="current Git HEAD differs")
+    assert project.state.read_bytes() == before
+    fake_executable = put(workspace / "not-executable.exe", "plain text")
+    step = contract_data["steps"]["R01"]
+    put(contract, contract_data | {"steps": {"R01": step | {
+        "command": [str(fake_executable), *step["command"][1:]],
+        "executable_sha256": fingerprint(fake_executable),
+    }}})
+    project.cli("transition", "--to", "building_audit_gate", "--evidence", report, "--artifact", contract,
+                denied="cannot use a non-executable file")
+    assert project.state.read_bytes() == before
+    fake_executable.unlink()
+    put(contract, contract_data)
+    if historical_null:
+        old_report = put("audits/building/legacy.md", report.read_text(encoding="utf-8").replace("audit_id: B001", "audit_id: B000"))
+        old_record = {"path": str(old_report), "sha256": fingerprint(old_report)}
+        state = json.loads(before)
+        state.update(status="building_audit_gate", phase="building_audit",
+                     next_allowed_actions=["wait_for_user_decision"])
+        state["evidence"]["building_audit"] = [old_record]
+        put(project.state, state)
+        binding = {"report_sha256": fingerprint(old_report), "contract_sha256": fingerprint(contract)}
+        put(gate, gate_data | {"audit_binding": binding})
+        registered = project.state.read_bytes()
+        project.cli("gate", "--artifact", tmp_path, "--evidence", gate, denied="use revise-building-audit")
+        assert project.state.read_bytes() == registered
+        binding["contract_sha256"] = None
+        put(gate, gate_data | {"audit_binding": binding})
+        # Reconstruct the durable null gate persisted by the previous implementation.
+        state["building_gate"] = {"audit": [old_record], "audit_binding": binding,
+                                  "files": [{"path": str(gate), "sha256": fingerprint(gate)}]}
+        put(project.state, state)
+        original = project.state.read_bytes()
+        project.cli("revise-building-audit", "--evidence", report, "--artifact", contract,
+                    denied="parent_audit_id")
+        assert project.state.read_bytes() == original
+        put(report, report.read_text(encoding="utf-8").replace(
+            "parent_audit_id: <上一份审计 ID 或 null>", "parent_audit_id: B000"))
+        project.cli("revise-building-audit", "--evidence", report, "--artifact", contract)
+        state = json.loads(project.state.read_bytes())
+        assert "building_gate" not in state and "runtime" not in state
+        assert state["building_audit_revisions"][0]["report"] == old_record
+        assert state["evidence"]["building_audit_pending"] == json.loads(original)["evidence"]["building_audit_pending"]
+        assert fingerprint(old_report) == old_record["sha256"]
+        archived_receipt = state["building_audit_revisions"][0]["building_gate"]["files"][0]
+        project.cli("gate", "--artifact", tmp_path, "--evidence", gate, denied="new Building gate receipt path")
+        assert fingerprint(gate) == archived_receipt["sha256"]
+        gate = put(workspace / "building/revised-gate.json", gate_data)
+    else:
+        unready = put("audits/building/with-notes.md",
+                      report.read_text(encoding="utf-8").replace("assessment: PASS", "assessment: PASS_WITH_NOTES"))
+        project.cli("transition", "--to", "building_audit_gate", "--evidence", unready,
+                    denied="passing Building Audit requires a verified Runtime contract")
+        project.cli("transition", "--to", "building_audit_gate", "--evidence", unready, "--artifact", contract,
+                    denied="PASS_WITH_NOTES requires stated limitations")
+        assert project.state.read_bytes() == before
+        put(unready, unready.read_text(encoding="utf-8").replace(
+            "- `limitations: []`", '<!--\n- `limitations: ["hidden"]`\n-->'))
+        project.cli("transition", "--to", "building_audit_gate", "--evidence", unready, "--artifact", contract,
+                    denied="exactly one limitations")
+        assert project.state.read_bytes() == before
+        project.cli("transition", "--to", "building_audit_gate", "--evidence", report, "--artifact", contract)
+
     audit_binding = {"report_sha256": fingerprint(report), "contract_sha256": fingerprint(contract)}
     put(gate, gate_data | {"audit_binding": audit_binding | {"report_sha256": "0" * 64}})
     project.cli("gate", "--artifact", tmp_path, "--evidence", gate, denied="report fingerprint mismatch")
+    put(gate, gate_data | {"audit_binding": audit_binding | {"contract_sha256": "0" * 64}})
+    project.cli("gate", "--artifact", tmp_path, "--evidence", gate, denied="must bind the Runtime contract")
     put(gate, gate_data | {"audit_binding": audit_binding})
+    bound_bytes = contract.read_text(encoding="utf-8")
+    put(contract, bound_bytes + "\n")
+    project.cli("gate", "--artifact", tmp_path, "--evidence", gate, denied="fingerprint changed")
+    put(contract, bound_bytes)
     project.cli("gate", "--artifact", tmp_path, "--evidence", gate)
     building_manifest = json.loads((workspace / "building/manifest.json").read_text(encoding="utf-8"))
     assert building_manifest["audit_binding"] == audit_binding
+    alternative = put("audits/building/attempted-revision.md", report.read_text(encoding="utf-8")
+                      .replace("audit_id: B001", "audit_id: B099")
+                      .replace("parent_audit_id: B000", "parent_audit_id: B001")
+                      .replace("parent_audit_id: <上一份审计 ID 或 null>", "parent_audit_id: B001"))
+    registered = project.state.read_bytes()
+    put(contract, bound_bytes + "\n")
+    project.cli("revise-building-audit", "--evidence", alternative, "--artifact", contract,
+                denied="fingerprint changed")
+    assert project.state.read_bytes() == registered
+    put(contract, bound_bytes)
+    if historical_null:
+        # An earlier revision can predate the currently pinned contract.
+        earlier_contract = put(workspace / "building/historical-contract.json", {"version": "old"})
+        prior_state = json.loads(registered)
+        prior_state["building_audit_revisions"][0]["runtime_contract"] = {
+            "path": str(earlier_contract), "sha256": fingerprint(earlier_contract),
+        }
+        put(project.state, prior_state)
+        archived_state = project.state.read_bytes()
+        put(earlier_contract, {"version": "changed"})
+        project.cli("revise-building-audit", "--evidence", alternative, "--artifact", contract,
+                    denied="fingerprint changed")
+        assert project.state.read_bytes() == archived_state
+        put(earlier_contract, {"version": "old"})
     building_receipt = put(runtime / "evidence/building.json", {
         **building_identity, "contract_sha256": fingerprint(contract), "audit_id": "B001", "assessment": "PASS",
         "report_sha256": fingerprint(report), "report_presented_at": "2024-01-01T00:00:00+00:00",
@@ -172,18 +271,36 @@ def test_structured_proposal_to_runtime_finish(proposal, tmp_path, reopen):
         "spec_approval_ref": "spec-approval", "audit_user_decision": "accepted", "accepted_audit_id": "B001",
         "limitations": [], "accepted_limitations": [],
     })
+    project.cli("runtime-init", "--artifact", contract, "--evidence", building_receipt,
+                denied="must be presented after the audit was registered")
+    now = clock()
+    put(building_receipt, json.loads(building_receipt.read_text(encoding="utf-8")) |
+        {"report_presented_at": now, "accepted_at": clock()})
     current_building_receipt = building_receipt.read_text(encoding="utf-8")
     put(building_receipt, json.loads(current_building_receipt) | {"spec_approval_ref": "stale-spec-approval"})
     project.cli("runtime-init", "--artifact", contract, "--evidence", building_receipt, denied="current Spec approval")
+    put(building_receipt, json.loads(current_building_receipt) | {"acceptance_ref": "spec-approval"})
+    project.cli("runtime-init", "--artifact", contract, "--evidence", building_receipt,
+                denied="separate message from Spec approval")
     put(building_receipt, current_building_receipt)
+    alternate_contract = put(runtime / "evidence/alternate-contract.json", bound_bytes)
+    project.cli("runtime-init", "--artifact", alternate_contract, "--evidence", building_receipt,
+                denied="requires the Runtime contract file verified at Building Audit")
+    if historical_null:
+        original_report = old_report.read_text(encoding="utf-8")
+        put(old_report, original_report + "\nchanged archive\n")
+        project.cli("runtime-init", "--artifact", contract, "--evidence", building_receipt,
+                    denied="fingerprint changed")
+        put(old_report, original_report)
     project.cli("runtime-init", "--artifact", contract, "--evidence", building_receipt)
     assert manifest()["schema_version"] == 2
     assert manifest()["building_audit"]["binding"]["contract_sha256"] == fingerprint(contract)
     project.cli("runtime-run", "R01", "--actor", "executor", denied="not authorized")
-    project.cli("runtime-authorize", "--evidence", put(runtime / "evidence/authorization.json", {
-        "audit_id": "B001", "contract_sha256": fingerprint(contract), "authorized_at": clock(),
-        "user_message_ref": "runtime-authorization", "steps": ["R01"],
-    }))
+    authorize = {"audit_id": "B001", "contract_sha256": fingerprint(contract), "authorized_at": clock(),
+                 "user_message_ref": "runtime-authorization", "steps": ["R01"]}
+    project.cli("runtime-authorize", "--evidence", put(runtime / "evidence/stale-authorization.json",
+                authorize | {"user_message_ref": "spec-approval"}), denied="separate message from Spec approval")
+    project.cli("runtime-authorize", "--evidence", put(runtime / "evidence/authorization.json", authorize))
 
     def run_and_review(verdict="PASS", route=None, extra=()):
         facts = project.cli("runtime-run", "R01", "--actor", "executor", *extra)

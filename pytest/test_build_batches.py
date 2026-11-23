@@ -106,6 +106,7 @@ class BatchedScenario(Scenario):
             "assessment: PASS | PASS_WITH_NOTES | CHANGES_REQUIRED | BLOCKED", "assessment: PASS")
         report = report.replace("`limitations: []`（填写用户需接受的限制，使用 JSON 字符串数组）", "`limitations: []`")
         report = report.replace("| | | | | |\n\n## 审计门禁记录", f"{AUDIT_ROW.replace('T01', task_id)}\n\n## 审计门禁记录")
+        contract_path = self.attachment("contract", self.contract)
         relative_report = Path(f"audits/building/{batch}.md")
         if reject_worktree_report:
             for invalid in (self.root / relative_report, self.unit / relative_report.parent / "nested" / relative_report.name):
@@ -115,7 +116,8 @@ class BatchedScenario(Scenario):
                          denied="formal Building Audit")
                 assert self.state.read_bytes() == before
         if legacy_report:
-            report_path = self.file(relative_report, report)
+            report_path = self.file(relative_report, report +
+                                    f"\n- `contract_sha256: {fingerprint(contract_path)}`\n")
             state = json.loads(self.state.read_text(encoding="utf-8"))
             state.update(status="building_audit_gate", phase="building_audit",
                          next_allowed_actions=["wait_for_user_decision"])
@@ -123,8 +125,8 @@ class BatchedScenario(Scenario):
             self.file(self.state, state)
         else:
             report_path = self.file(self.unit / relative_report, report)
-            self.cli("transition", "--to", "building_audit_gate", "--evidence", report_path)
-        contract_path = self.attachment("contract", self.contract)
+            self.cli("transition", "--to", "building_audit_gate", "--evidence", report_path,
+                     "--artifact", contract_path)
         gate = self.file(self.directory / "gate.json", {
             "ledger": str(self.file(self.directory / "progress.md",
                                     f"Task {task_id}: complete (commits {base}..{head}, review clean) · {fingerprint(spec)}")),
