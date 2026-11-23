@@ -776,7 +776,10 @@ def register_building_audit(state, state_path, worktree, report, artifact, revis
     import sdd_layout
     import sdd_unit_git as unit_git
 
-    verify_report_layout(report["path"], "building")
+    try:
+        verify_report_layout(report["path"], "building")
+    except SystemExit as exc:
+        raise SystemExit(f"Building Audit report layout: {exc}") from None
     revisions = runtime.building_audit_revisions(state)
     runtime.verify_building_revision_files(revisions)
     previous_audits = [revision["report"] for revision in revisions]
