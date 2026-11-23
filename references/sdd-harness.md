@@ -84,7 +84,13 @@ python <Harness路径> init <WORKTREE>/.tmp/sdd/<计划名>/state.json --build-p
 
 合同记录 `run_id`、`code_root`、`code_commit`、`build_plan_sha256`、`task_specs`、`inputs`、`nodes` 和 `steps`。节点与步骤的 `needs` 从获批计划转录，步骤还绑定 `node`、`task_id`、`acs`、输入和输出、配置、命令参数数组以及 `resources.timeout_seconds`。当前 CLI 串行执行步骤，同节点内仍按依赖关系选择下一步。
 
-步骤使用获批的可执行文件绝对路径和 `executable_sha256`。配置可为空，提供时将路径和 SHA-256 写入 `config`。命令参数用独立的 `{input:输入ID}`、`{output:逻辑路径}`、`{output-dir:results/data}`、`{upstream:步骤ID:逻辑路径}` 等参数引用受绑定文件。需要调用外部或未跟踪的脚本时，显式列入 `code_inputs` 并绑定内容。运行所需的环境变量从 `environment` 声明。为保持代码来源一致，运行工作树中的未跟踪代码文件也须纳入绑定或移出运行工作树。
+步骤使用获批的可执行文件绝对路径和 `executable_sha256`。配置可为空，提供时将路径和 SHA-256 写入 `config`。命令参数用独立的 `{input:输入ID}`、`{output:逻辑路径}`、`{output-dir:results/data}`、`{upstream:步骤ID:逻辑路径}` 等参数引用受绑定文件。需要调用外部或未跟踪的脚本时，显式列入 `code_inputs` 并绑定内容。运行所需的环境变量从 `environment` 声明。为保持代码来源一致，运行工作树中的未跟踪代码文件也须纳入绑定或移出运行工作树。已验证的项目内 Python 环境按下文登记。
+
+### 项目内 Python 虚拟环境
+
+功能单元或执行工作树根目录可保留 Git 忽略的 `.venv/`。使用本地复制的 Python 解释器，例如 `python -m venv --copies .venv`，并关闭系统 site-packages。安装和核对依赖后，运行 `python <Harness路径> <state.json> python-environment-fingerprint --artifact <.venv绝对路径>`。将返回的 JSON 作为 Runtime 合同的 `python_environment`，至少一个获批步骤的 `command[0]` 使用其中的 `executable`，继续按原规则登记该可执行文件的 `executable_sha256`。环境登记不替代步骤的运行授权。
+
+指纹覆盖环境内实际安装的文件与路径，以及 Windows 虚拟环境启动器使用的底层 Python 可执行文件和相邻 Python DLL。Harness 在合同登记、步骤运行前后和步骤通过审查前复验。依赖、配置或环境文件变化时，重新生成指纹并按原门禁登记修订后的合同。只对这一个登记环境单独处理工作树扫描，其他被 Git 忽略的代码仍照常检查。系统库和环境目录外的动态依赖仍按既有 `code_inputs` 和独立审计规则核对。
 
 步骤环境由合同变量和 Harness 提供的固定平台变量组成。合同键名不区分大小写地禁止以下前缀：`PYTHON`、`LD_`、`DYLD_`、`R_`、`NODE_`、`PERL`、`RUBY`、`LUA_`、`DOTNET_`、`COMPLUS_`。禁止的完整键名为 `CLASSPATH`、`JAVA_HOME`、`JAVA_TOOL_OPTIONS`、`_JAVA_OPTIONS`、`JDK_JAVA_OPTIONS`、`BASH_ENV`、`ENV`、`ZDOTDIR`、`PSMODULEPATH`、`PATHEXT`、`SYSTEMROOT`、`WINDIR`。`PATH` 使用平台分隔符列出所需的绝对目录。每个目录至少包含一个通过 `code_inputs` 绑定 SHA-256 的可执行文件。声明的二进制必须是该 `PATH` 中首个同名可执行文件，Harness 在运行前重查其身份。审计应核对受审源码调用的所有子命令和相关运行库。Harness 信任受审程序，无法枚举它动态加载的所有依赖。
 

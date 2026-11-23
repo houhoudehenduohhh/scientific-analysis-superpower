@@ -669,6 +669,111 @@ def test_runtime_rejects_ignored_worktree_dependency(scenario):
     scenario.run("S1", denied="unbound code or dependency")
 
 
+def local_python_environment(scenario):
+    directory = scenario.root / ".venv"
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", "--copies", str(directory)], check=True)
+    executable = directory / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    libraries = (directory / "Lib/site-packages" if os.name == "nt"
+                 else next(directory.glob("lib/python*/site-packages")))
+    package = scenario.file(libraries / "audit_fixture_dependency.py", "IS_FIXTURE = True\n")
+    scenario.file(".git/info/exclude", ".venv/\n")
+    step = scenario.contract["steps"]["S1"]
+    step["command"][0] = str(executable)
+    step["executable_sha256"] = fingerprint(executable)
+    return directory, package
+
+
+def test_explicit_python_environment_runs_and_other_ignored_code_stays_blocked(scenario):
+    directory, _ = local_python_environment(scenario)
+    response = scenario.cli("python-environment-fingerprint", "--artifact", directory)
+    scenario.contract["python_environment"] = json.loads(response.stdout)
+    launcher = scenario.file(".tmp/verify-venv.py",
+                             "import pathlib, runpy, sys\n"
+                             "import audit_fixture_dependency\n"
+                             f"assert pathlib.Path(sys.prefix) == pathlib.Path({str(directory)!r})\n"
+                             "assert audit_fixture_dependency.IS_FIXTURE is True\n"
+                             "runpy.run_path('job.py', run_name='__main__')\n")
+    step = scenario.contract["steps"]["S1"]
+    step["command"][1] = "{code:launcher}"
+    step["code_inputs"] = {"launcher": {"path": str(launcher), "sha256": fingerprint(launcher)}}
+    scenario.initialize()
+    scenario.authorize(["S1"])
+    scenario.file(".git/info/exclude", ".venv/\nother.py\n")
+    other = scenario.file("other.py", "IS_UNBOUND = True\n")
+    scenario.run("S1", denied="unbound code or dependency")
+    other.unlink()
+    attempt = scenario.run("S1")
+    assert attempt["exit_code"] == 0 and not attempt["evidence_errors"]
+    assert attempt["python_environment"] == scenario.contract["python_environment"]
+
+
+def test_python_environment_digest_is_checked_at_runtime_init(scenario):
+    directory, _ = local_python_environment(scenario)
+    response = scenario.cli("python-environment-fingerprint", "--artifact", directory)
+    binding = json.loads(response.stdout)
+    scenario.contract["python_environment"] = {**binding, "sha256": "0" * 64}
+    scenario.initialize(denied="Python environment fingerprint changed")
+    assert "runtime" not in json.loads(scenario.state.read_text(encoding="utf-8"))
+
+
+def test_undeclared_local_python_environment_is_not_exempt(scenario):
+    local_python_environment(scenario)
+    scenario.initialize()
+    scenario.authorize(["S1"])
+    scenario.run("S1", denied="unbound code or dependency")
+
+
+def test_changed_python_environment_requires_new_binding(scenario):
+    directory, package = local_python_environment(scenario)
+    response = scenario.cli("python-environment-fingerprint", "--artifact", directory)
+    scenario.contract["python_environment"] = json.loads(response.stdout)
+    scenario.initialize()
+    scenario.authorize(["S1"])
+    original = package.read_bytes()
+    package.write_bytes(original.replace(b"True", b"None"))
+    before = scenario.state.read_bytes()
+    scenario.run("S1", denied="Python environment fingerprint changed")
+    assert scenario.state.read_bytes() == before
+    package.write_bytes(original)
+    attempt = scenario.run("S1")
+    assert attempt["exit_code"] == 0
+    package.write_bytes(original.replace(b"True", b"None"))
+    scenario.review(attempt, denied="Python environment fingerprint changed")
+    package.write_bytes(original)
+    scenario.review(attempt)
+
+
+def test_python_environment_detects_mutation_by_child_process(scenario):
+    directory, package = local_python_environment(scenario)
+    response = scenario.cli("python-environment-fingerprint", "--artifact", directory)
+    scenario.contract["python_environment"] = json.loads(response.stdout)
+    launcher = scenario.file(".tmp/mutate-venv.py",
+                             "import pathlib, runpy\n"
+                             "runpy.run_path('job.py', run_name='__main__')\n"
+                             f"pathlib.Path({str(package)!r}).write_text('IS_FIXTURE = False', encoding='utf-8')\n")
+    step = scenario.contract["steps"]["S1"]
+    step["command"][1] = "{code:launcher}"
+    step["code_inputs"] = {"launcher": {"path": str(launcher), "sha256": fingerprint(launcher)}}
+    scenario.initialize()
+    scenario.authorize(["S1"])
+    original = package.read_bytes()
+    attempt = scenario.run("S1")
+    assert attempt["exit_code"] == 0
+    assert any("Python environment fingerprint changed" in error for error in attempt["evidence_errors"])
+    package.write_bytes(original)
+    scenario.review(attempt, denied="requires successful execution and intact outputs")
+
+
+def test_python_environment_rejects_system_site_packages(scenario):
+    directory, _ = local_python_environment(scenario)
+    config = directory / "pyvenv.cfg"
+    original = config.read_text(encoding="utf-8")
+    config.write_text(original.replace("include-system-site-packages = false",
+                                       "include-system-site-packages = true"), encoding="utf-8")
+    scenario.cli("python-environment-fingerprint", "--artifact", directory,
+                 denied="must disable system site-packages")
+
+
 @pytest.mark.parametrize("key", ["PYTHONPATH", "pythonhome", "LD_PRELOAD", "R_PROFILE_USER", "HOME", "APPDATA"])
 def test_runtime_rejects_environment_code_injection(scenario, key):
     external = scenario.file(".tmp/external/sitecustomize.py", "raise RuntimeError('unbound startup')\n")
