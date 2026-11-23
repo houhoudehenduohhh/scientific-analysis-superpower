@@ -313,7 +313,7 @@ def main():
     # Accept the documented command-first form as well as the historical
     # STATE COMMAND form used by existing SDD workspaces.
     commands={"init", "status", "transition", "allowed", "verify", "verify-report", "verify-task-spec", "verify-build-plan", "register-task", "gate", "proposal-rebind",
-              "prepare-git", "resolve-workspace"} | runtime_harness.COMMANDS
+              "prepare-git", "resolve-workspace", "python-environment-fingerprint"} | runtime_harness.COMMANDS
     if len(sys.argv) > 2 and sys.argv[1] in commands:
         sys.argv[1], sys.argv[2] = sys.argv[2], sys.argv[1]
     ap = argparse.ArgumentParser()
@@ -808,6 +808,18 @@ def _main(args, path):
         if not args.artifact or not args.report_kind:
             raise SystemExit("verify-report requires --artifact REPORT --report-kind building|runtime")
         print(json.dumps(verify_report_layout(args.artifact, args.report_kind), ensure_ascii=False))
+        return
+    if args.action == "python-environment-fingerprint":
+        import runtime_harness
+
+        if not binding or not args.artifact:
+            raise SystemExit("python-environment-fingerprint requires a bound Git workspace and --artifact .venv")
+        try:
+            result = runtime_harness.python_environment_fingerprint(
+                Path(binding["unit_root"]), selected_worktree, args.artifact)
+        except (OSError, ValueError) as exc:
+            raise SystemExit(str(exc)) from None
+        print(json.dumps(result, ensure_ascii=True))
         return
     current = state["status"]
     root=path.parent

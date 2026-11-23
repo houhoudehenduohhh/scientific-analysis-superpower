@@ -343,11 +343,87 @@ def command_files(root, step, available, tracked):
     return files
 
 
-def verify_untracked_code(root, allowed_files):
+def python_environment_fingerprint(unit_root, worktree, value):
+    directory = Path(text(value, "Python environment path"))
+    require(directory in {unit_root / ".venv", worktree / ".venv"}
+            and directory.is_dir() and directory.resolve() == directory,
+            "Python environment must be the canonical .venv of the approved unit or worktree")
+
+    def redirected(info):
+        return stat.S_ISLNK(info.st_mode) or bool(
+            getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+    require(not redirected(directory.lstat()), f"Python environment path is redirected: {directory}")
+    executable = directory / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    config = directory / "pyvenv.cfg"
+    require(config.is_file() and not redirected(config.lstat()) and executable.is_file()
+            and executable.resolve() == executable and not redirected(executable.lstat()),
+            "Python environment requires pyvenv.cfg and a local copied Python executable")
+    settings = {}
+    for line in config.read_text(encoding="utf-8").splitlines():
+        key, separator, setting = line.partition("=")
+        if separator:
+            settings.setdefault(key.strip().casefold(), []).append(setting.strip())
+    require([flag.casefold() for flag in settings.get("include-system-site-packages", [])] == ["false"],
+            "Python environment must disable system site-packages")
+
+    base_runtime = []
+    if os.name == "nt":
+        # A Windows venv python.exe is a redirector. Include its underlying interpreter.
+        homes = settings.get("home", [])
+        require(len(homes) == 1 and Path(homes[0]).is_absolute(),
+                "Windows Python environment requires one absolute base Python home")
+        home = Path(homes[0]).resolve(strict=True)
+        dlls = sorted(path for path in home.glob("python*.dll") if re.fullmatch(r"python[0-9]+t?\.dll", path.name, re.I))
+        base_runtime = [fingerprint(path.resolve(strict=True)) for path in [home / "python.exe", *dlls]]
+
+    entries = {}
+
+    def walk_error(error):
+        raise error
+
+    for parent, dirs, files in os.walk(directory, followlinks=False, onerror=walk_error):
+        for name in [*dirs, *files]:
+            path = Path(parent) / name
+            relative = path.relative_to(directory).as_posix()
+            info = path.lstat()
+            if redirected(info):
+                # CPython on some POSIX platforms creates lib64 -> lib even with --copies.
+                require(os.name != "nt" and relative == "lib64" and path.is_symlink()
+                        and os.readlink(path) == "lib" and path.resolve() == directory / "lib",
+                        f"Python environment contains a redirected file or directory: {path}")
+                if name in dirs:
+                    dirs.remove(name)
+                entries[relative] = {"link": "lib"}
+            elif stat.S_ISDIR(info.st_mode):
+                entries[relative] = {"directory": True}
+            else:
+                require(stat.S_ISREG(info.st_mode), f"Python environment requires a regular file: {path}")
+                entries[relative] = {"sha256": digest_file(path), "mode": stat.S_IMODE(info.st_mode)}
+    return {"path": str(directory), "executable": str(executable),
+            "sha256": digest_value({"files": entries, "base_runtime": base_runtime})}
+
+
+def verify_python_environment(state, worktree, binding):
+    binding = objects(binding, "Python environment binding")
+    matches(binding.get("sha256"), SHA256, "Python environment SHA-256")
+    unit_root = Path(state.get("git", {}).get("unit_root", worktree))
+    actual = python_environment_fingerprint(unit_root, worktree, binding.get("path"))
+    require(actual["executable"] == binding.get("executable"),
+            "Python environment executable differs from bound evidence")
+    require(actual["sha256"] == binding["sha256"], f"Python environment fingerprint changed: {actual['path']}")
+    require(actual == binding, "Python environment binding must use the fingerprint command output")
+    return actual
+
+
+def verify_untracked_code(root, allowed_files, python_environment=None):
+    environment_directory = Path(python_environment["path"]) if python_environment else None
     approved = {Path(record["path"]) for record in allowed_files}
     for value in git(root, "ls-files", "-z", "--others").split("\0"):
         if value:
             path = root / value
+            if environment_directory is not None and path.is_relative_to(environment_directory):
+                continue
             link = path.is_symlink() or (os.name == "nt" and getattr(path, "is_junction", lambda: False)())
             if not link and not CODE_SUFFIX.search(value):
                 continue
@@ -940,6 +1016,10 @@ class Runtime:
             contract, self.state, previous_nodes=self.previous_nodes,
             previous_steps={step: runtime.steps[step] for step, runtime in self.previous_steps.items()},
         )
+        if "python_environment" in contract:
+            environment = verify_python_environment(self.state, root, contract["python_environment"])
+            require(any(record["path"] == environment["executable"] for record in executables.values()),
+                    "at least one approved step must use the declared Python environment executable")
         plan = Path(self.state["refs"]["build_plan"]["path"]).read_text(encoding="utf-8")
         batch_id = self.state.get("spec_approval", {}).get("batch_id")
         next_batch = None
@@ -1222,7 +1302,10 @@ class Runtime:
         code_files = self.data["code_files"][name]
         for binding in code_files.values():
             verify_file(binding)
-        verify_untracked_code(self.root, [*code_files.values(), executable])
+        python_environment = None
+        if "python_environment" in self.contract:
+            python_environment = verify_python_environment(self.state, self.root, self.contract["python_environment"])
+        verify_untracked_code(self.root, [*code_files.values(), executable], python_environment)
         inputs = {key: {**self.contract["inputs"][key], **file_binding(self.root, self.contract["inputs"][key])}
                   for key in step["inputs"]}
         config = file_binding(self.root, step["config"]) if step.get("config") is not None else None
@@ -1274,6 +1357,8 @@ class Runtime:
             "upstream_steps": dependencies,
             "upstream_audits": upstream_nodes, "retry": retry,
         }
+        if python_environment:
+            start["python_environment"] = python_environment
         log_dir.mkdir(parents=True, exist_ok=False)
         for target in destinations.values():
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -1296,11 +1381,13 @@ class Runtime:
         evidence_errors = []
         try:
             verify_code(self.root, start["code_commit"])
-            verify_untracked_code(self.root, [*code_files.values(), executable])
+            if python_environment:
+                verify_python_environment(self.state, self.root, python_environment)
+            verify_untracked_code(self.root, [*code_files.values(), executable], python_environment)
             for binding in [executable, *code_files.values(), *([config] if config else []), *inputs.values(),
                             *(item for source in dependencies.values() for item in source["outputs"].values())]:
                 verify_file(binding)
-        except (SystemExit, OSError, subprocess.CalledProcessError) as exc:
+        except (SystemExit, OSError, ValueError, subprocess.CalledProcessError) as exc:
             evidence_errors.append(str(exc))
         outputs = {}
         for key, target in destinations.items():
@@ -1380,6 +1467,8 @@ class Runtime:
                 "Runtime Task Review must evaluate each approved AC")
         review_route(review, verdict)
         if verdict == "PASS":
+            if "python_environment" in facts:
+                verify_python_environment(self.state, self.root, facts["python_environment"])
             require(facts["exit_code"] == 0 and facts["all_outputs_present"] and not facts["evidence_errors"],
                     "passing Runtime Task Review requires successful execution and intact outputs")
             require(all(value == "PASS" for value in acs.values()), "passing Runtime Task Review requires all ACs to pass")
