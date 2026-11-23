@@ -25,4 +25,4 @@
 ## 返工与门禁
 
 - 每个任务由独立 Reviewer 对契约符合性和代码质量作双重结论，Agent 在已批准计划内自动完成任务级修复及局部复审，不设置逐任务人工门禁。每任务最多五轮；仍有实质缺陷时暂停依赖任务，带完整证据交用户决定。非阻断问题如实列入最终报告，由用户决定是否接受。
-- 本次建设范围的全部任务结束后，按 [最终 Review 规则](../skills/subagent-driven-development/references/final-review.md)由一名独立 Reviewer 审查本批整段代码变更；可修复的实现缺陷最多集中修复一次并局部复审。初审与复审先存 SDD 临时工作区；循环结束后才在获批功能单元根目录的 `audits/building/` 直接形成一份 [正式 Building Audit 报告](../templates/building-audit-report.md)，关联当前 Spec、Plan、代码提交、任务审查和验证证据。正式报告生成即停止，用户接受前不得进入 Runtime。
+- 本次建设范围的全部任务结束后，按 [最终 Review 规则](../skills/subagent-driven-development/references/final-review.md)由一名独立 Reviewer 审查本批整段代码变更；可修复的实现缺陷最多集中修复一次并局部复审。初审与复审先存 SDD 临时工作区；循环结束后才在获批功能单元根目录的 `audits/building/` 直接形成一份 [正式 Building Audit 报告](../templates/building-audit-report.md)，关联当前 Spec、Plan、代码提交、任务审查和验证证据。有正式运行步骤的节点在审计收尾前，按拟执行环境核实实际输入和依赖并准备 Runtime 合同，独立审计须覆盖合同。将通过报告及合同一起登记并完成 Building gate，随后停在用户裁决处。

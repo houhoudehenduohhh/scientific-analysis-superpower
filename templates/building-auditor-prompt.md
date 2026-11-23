@@ -16,7 +16,7 @@ Task Review / Re-review：[TASK_REVIEW_FILES]
 完整 Diff / Review Package：[DIFF_FILE]
 测试和 smoke 证据：[TEST_EVIDENCE]
 源数据身份与资格证据：[SOURCE_DATA_EVIDENCE]
-拟交接的 Runtime 合同及 SHA-256：[RUNTIME_CONTRACT_OR_NONE]
+拟交接的 Runtime 合同及 SHA-256：[RUNTIME_CONTRACT]（有正式运行步骤的通过报告必需）
 本次报告输出路径：[OUTPUT_REPORT]
 报告模板：[BUILDING_AUDIT_TEMPLATE]
 
@@ -26,7 +26,7 @@ Task Review / Re-review：[TASK_REVIEW_FILES]
 3. RED/GREEN 证据是否真实覆盖相关行为，是否记录了必要的完整测试。
 4. 当前 Diff 是否引入未批准的行为、接口、数据或算法变化。
 5. 跨任务输入、输出、依赖、Runtime 步骤和验收节点是否一致。
-6. Git 提交、Build Plan、Task MD、测试、报告和结果是否可追溯到同一版本。有 Runtime 合同时，核对其步骤、输入、命令和输出与获批计划一致，并将合同的完整 SHA-256 提供给协调者登记机器证据。
+6. Git 提交、Build Plan、Task MD、测试、报告和结果是否可追溯到同一版本。有正式运行步骤时，核对合同的输入版本、环境、步骤、命令和输出与获批计划一致。合同未核实前保留技术审查结论。通过报告登记时提交实际合同文件，完整指纹留在机器证据里。
 7. 是否存在必须返回 Proposal、Building 或 Runtime 的问题。
 8. 按审查基线到当前 HEAD 的 Git 差异核对入口是否符合 Build Plan 声明，新脚本是否位于获批目录。
 

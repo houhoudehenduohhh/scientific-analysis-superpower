@@ -280,6 +280,10 @@ def sync_manifests(root, state):
     if state.get("building_history") and not state.get("tasks"):
         bp = {"final_review": "pending", "building_audit": "blocked"}
     bp.update({"phase":"building","status":status if phase in {"proposal", "building", "building_audit"} else bp.get("status","building_audit_gate"),**view,"runtime_manifest":"runtime/manifest.json","tasks":state.get("tasks",bp.get("tasks",{})),"evidence":state.get("evidence",bp.get("evidence",{})),"user_acceptance":state.get("user_acceptance",bp.get("user_acceptance"))})
+    if "building_runtime_contract" in state:
+        bp["runtime_contract"] = state["building_runtime_contract"]
+    else:
+        bp.pop("runtime_contract", None)
     audit_binding = (state.get("building_gate") or {}).get("audit_binding")
     if audit_binding is None:
         bp.pop("audit_binding", None)
@@ -312,7 +316,7 @@ def main():
 
     # Accept the documented command-first form as well as the historical
     # STATE COMMAND form used by existing SDD workspaces.
-    commands={"init", "status", "transition", "allowed", "verify", "verify-report", "verify-task-spec", "verify-build-plan", "register-task", "gate", "proposal-rebind",
+    commands={"init", "status", "transition", "allowed", "verify", "verify-report", "verify-task-spec", "verify-build-plan", "register-task", "gate", "revise-building-audit", "proposal-rebind",
               "prepare-git", "resolve-workspace", "python-environment-fingerprint"} | runtime_harness.COMMANDS
     if len(sys.argv) > 2 and sys.argv[1] in commands:
         sys.argv[1], sys.argv[2] = sys.argv[2], sys.argv[1]
@@ -602,7 +606,8 @@ def archive_building_cycle(root, state, runtime):
     history = {"run_id": run_id, "refs": state["refs"], "tasks": state["tasks"],
                "task_id": state["task_id"], "fix_round": state["fix_round"], "evidence": state["evidence"]}
     for key in ("building_gate", "user_acceptance", "spec_approval", "artifact_bindings", "artifacts",
-                "artifact_verifications"):
+                "artifact_verifications", "building_runtime_contract", "building_audit_registered_at",
+                "building_audit_revisions"):
         if key in state:
             history[key] = state[key]
     if runtime["return_stage"] == "Proposal":
@@ -639,7 +644,8 @@ def archive_building_cycle(root, state, runtime):
                 stream.write(content)
         history["spec_snapshots"] = snapshots
     for key in ("building_gate", "user_acceptance", "spec_approval", "artifact_bindings", "artifacts",
-                "artifact_verifications"):
+                "artifact_verifications", "building_runtime_contract", "building_audit_registered_at",
+                "building_audit_revisions"):
         if key != "spec_approval" or runtime["return_stage"] == "Proposal":
             state.pop(key, None)
     state.setdefault("building_history", []).append(history)
@@ -763,6 +769,87 @@ def rebind_proposal(args, state, state_path):
     state.update(refs={"build_plan": plan, "spec_approval": receipt}, spec_approval=approval,
                  building_baseline=unit_git.head(Path(binding["worktree"])),
                  status="building_incomplete", phase="building", next_allowed_actions=NEXT["building_incomplete"])
+
+
+def register_building_audit(state, state_path, worktree, report, artifact, revising):
+    import runtime_harness as runtime
+    import sdd_layout
+    import sdd_unit_git as unit_git
+
+    try:
+        verify_report_layout(report["path"], "building")
+    except SystemExit as exc:
+        raise SystemExit(f"Building Audit report layout: {exc}") from None
+    revisions = runtime.building_audit_revisions(state)
+    runtime.verify_building_revision_files(revisions)
+    previous_audits = [revision["report"] for revision in revisions]
+    history = state.get("building_history", [])
+    historical_reports = [old for item in history for old in item["evidence"].get("building_audit", [])]
+    if revising:
+        old_report = state["evidence"]["building_audit"][0]
+        previous_audits.append(old_report)
+    runtime.distinct_file(report, [*historical_reports, *previous_audits], "formal Building Audit")
+    previous_audits.extend(old for item in history if "proposal_return" in item
+                           for old in item["evidence"].get("building_audit", []))
+
+    plan = state["refs"]["build_plan"]
+    structured = sdd_layout.structured_plan(Path(plan["path"]).read_text(encoding="utf-8"))
+    content = _evidence_text([report])
+    if structured or revising or artifact:
+        content = "\n".join(runtime.markdown_lines_outside_code(content.splitlines()))
+    assessment = runtime.markdown_value(content, "assessment")
+    if structured or previous_audits:
+        audit_id = runtime.matches(runtime.markdown_value(content, "audit_id"), runtime.ID, "Building audit_id")
+        for old in previous_audits:
+            _validate_record(old, "archived Building Audit")
+            old_id = runtime.markdown_value(_evidence_text([old]), "audit_id", default=None)
+            runtime.require(audit_id != old_id, "revised Building requires a new Building Audit path and audit_id")
+    if revising:
+        parent_id = runtime.markdown_value(_evidence_text([old_report]), "audit_id")
+        runtime.markdown_field(content, "parent_audit_id", parent_id)
+
+    previous_contract = state.get("building_runtime_contract")
+    if revising and previous_contract is not None:
+        runtime.verify_file(previous_contract)
+    previous_registered_at = state.get("building_audit_registered_at")
+    if assessment in runtime.PASS and (structured or revising or artifact):
+        runtime.require(artifact, "passing Building Audit requires a verified Runtime contract (--artifact)")
+        audit_id = runtime.matches(runtime.markdown_value(content, "audit_id"), runtime.ID, "Building audit_id")
+        runtime.passing_building_report_limits(content, audit_id, assessment)
+        runtime.require(all(audit_id != run["building_audit"]["binding"]["audit_id"]
+                            for run in state.get("runtime_history", [])),
+                        "new Runtime cycle requires a fresh Building Audit audit_id")
+        try:
+            inspector = runtime.Runtime(state, None, verify_report_layout, state_path=state_path)
+            contract_ref = inspector.preflight_building_contract(artifact)
+        except (ValueError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as exc:
+            raise SystemExit(f"invalid Building Runtime contract: {exc}") from None
+        runtime.verify_building_report_bindings(
+            report, {"report_sha256": report["sha256"], "contract_sha256": contract_ref["sha256"]},
+            unit_git.head(worktree), plan["sha256"],
+            {task_id: task["task_spec_sha256"] for task_id, task in state["tasks"].items()})
+        if structured:
+            scoped = state.get("spec_approval", {}).get("batch_id")
+            sdd_layout.verify_acceptance_index(content, plan["path"], task_ids=state["tasks"].keys() if scoped else None)
+        state["building_runtime_contract"] = contract_ref
+        state["building_audit_registered_at"] = runtime.now()
+    elif revising:
+        raise SystemExit("revising a Building Audit requires a passing report and verified Runtime contract")
+
+    if revising:
+        revision = {"report": old_report, "superseded_at": state["building_audit_registered_at"]}
+        if previous_registered_at is not None:
+            revision["registered_at"] = previous_registered_at
+        old_gate = state.get("building_gate")
+        if old_gate:
+            runtime.verify_file(old_gate["files"][0])
+        if previous_contract is not None:
+            revision["runtime_contract"] = previous_contract
+        for key in ("building_gate", "user_acceptance"):
+            if key in state:
+                revision[key] = state.pop(key)
+        state["user_acceptance"] = None
+        state.setdefault("building_audit_revisions", []).append(revision)
 
 
 def _main(args, path):
@@ -974,8 +1061,14 @@ def _main(args, path):
         if action == "create_building_audit":
             require_overall_review(state["evidence"].get("building_audit_pending", []))
         print(json.dumps({"allowed":True,"action":action,"state":current},ensure_ascii=False)); return
-    if not (args.to or args.value): raise SystemExit("transition requires --to STATE")
-    target = args.to or args.value
+    revising_audit = args.action == "revise-building-audit"
+    if revising_audit:
+        if current != "building_audit_gate" or not binding or args.to or args.value:
+            raise SystemExit("revise-building-audit requires the current Building Audit gate before Runtime")
+        target = "building_audit_gate"
+    else:
+        if not (args.to or args.value): raise SystemExit("transition requires --to STATE")
+        target = args.to or args.value
     if target in PHASE_STATUSES["runtime"] | PHASE_STATUSES["runtime_audit"] | PHASE_STATUSES["runtime_finish"]:
         raise SystemExit("Runtime transitions require runtime-init and scoped Runtime commands")
     if args.allowed_action:
@@ -983,7 +1076,7 @@ def _main(args, path):
             raise SystemExit("action not allowed: " + args.allowed_action)
         if target not in ACTION_TARGETS.get(args.allowed_action, set()):
             raise SystemExit("action does not map to target: " + args.allowed_action)
-    if target not in STATES.get(current, set()):
+    if not revising_audit and target not in STATES.get(current, set()):
         raise SystemExit(f"blocked transition: {current} -> {target}")
     if target in EVIDENCE_REQUIRED and not args.evidence:
         if target == "building_audit_pending":
@@ -1005,16 +1098,7 @@ def _main(args, path):
     if target == "building_audit_gate":
         require_overall_review(state["evidence"].get("building_audit_pending", []), audit=records)
         if binding:
-            try:
-                verify_report_layout(records[0]["path"], "building")
-                import runtime_harness as runtime
-
-                new_report = records[0]
-                historical_reports = [report for item in state.get("building_history", [])
-                                      for report in item["evidence"].get("building_audit", [])]
-                runtime.distinct_file(new_report, historical_reports, "formal Building Audit")
-            except SystemExit as exc:
-                raise SystemExit(f"Building Audit report layout: {exc}") from None
+            register_building_audit(state, path, selected_worktree, records[0], args.artifact, revising_audit)
     if records and target in EVIDENCE_REQUIRED:
         candidate_records = records
         if target == "fix_round_pending" and "CHANGES_REQUIRED" not in _evidence_text(candidate_records):
@@ -1069,7 +1153,7 @@ def _main(args, path):
             m=read(manifest); m["status"]=target if m.get("phase")==state.get("phase") else m.get("status"); write(manifest,m)
     event = path.parent / "events.jsonl"
     with event.open("a", encoding="utf-8") as f:
-        f.write(json.dumps({"from": current, "to": target, "timestamp": datetime.now(timezone.utc).isoformat()}, ensure_ascii=False) + "\n")
+        f.write(json.dumps({"action": args.action, "from": current, "to": target, "timestamp": datetime.now(timezone.utc).isoformat()}, ensure_ascii=False) + "\n")
     print(f"{current} -> {target}")
 
 if __name__ == "__main__": main()

@@ -64,6 +64,7 @@ python <Harness路径> init <WORKTREE>/.tmp/sdd/<计划名>/state.json --build-p
 
 | 命令 | 输入及职责 |
 |---|---|
+| `revise-building-audit --evidence <新报告.md> --artifact <Runtime合同.json>` | Runtime 未初始化时，用新审计版本登记已核实的合同。 |
 | `runtime-init --artifact <合同.json> --evidence <Building接受记录.json>` | 从当前 Building Audit Gate 绑定审计、已批准版本、步骤图和运行合同。 |
 | `runtime-authorize --evidence <运行授权.json>` | 记录用户在审计后明确授权的步骤。这条记录与审计接受分别绑定。 |
 | `runtime-status` | 查询当前节点、步骤和已有证据。 |
@@ -93,6 +94,10 @@ python <Harness路径> init <WORKTREE>/.tmp/sdd/<计划名>/state.json --build-p
 指纹覆盖环境内实际安装的文件与路径，以及 Windows 虚拟环境启动器使用的底层 Python 可执行文件和相邻 Python DLL。Harness 在合同登记、步骤运行前后和步骤通过审查前复验。依赖、配置或环境文件变化时，重新生成指纹并按原门禁登记修订后的合同。只对这一个登记环境单独处理工作树扫描，其他被 Git 忽略的代码仍照常检查。系统库和环境目录外的动态依赖仍按既有 `code_inputs` 和独立审计规则核对。
 
 步骤环境由合同变量和 Harness 提供的固定平台变量组成。合同键名不区分大小写地禁止以下前缀：`PYTHON`、`LD_`、`DYLD_`、`R_`、`NODE_`、`PERL`、`RUBY`、`LUA_`、`DOTNET_`、`COMPLUS_`。禁止的完整键名为 `CLASSPATH`、`JAVA_HOME`、`JAVA_TOOL_OPTIONS`、`_JAVA_OPTIONS`、`JDK_JAVA_OPTIONS`、`BASH_ENV`、`ENV`、`ZDOTDIR`、`PSMODULEPATH`、`PATHEXT`、`SYSTEMROOT`、`WINDIR`。`PATH` 使用平台分隔符列出所需的绝对目录。每个目录至少包含一个通过 `code_inputs` 绑定 SHA-256 的可执行文件。声明的二进制必须是该 `PATH` 中首个同名可执行文件，Harness 在运行前重查其身份。审计应核对受审源码调用的所有子命令和相关运行库。Harness 信任受审程序，无法枚举它动态加载的所有依赖。
+
+Building 收尾时核实正式运行位置的输入、环境与调用方式，审计覆盖实际版本化合同。用 `transition --to building_audit_gate --evidence <报告.md> --artifact <合同.json>` 登记通过报告。合同文件位于本轮 Runtime 的 `evidence/`，`gate` 和 `runtime-init` 复核同一合同。
+
+若旧版本在未绑定合同的情况下已经登记，保留原报告。补齐合同后，为同一受审版本生成一份有新路径、新 `audit_id` 和 `parent_audit_id`（原审计编号）的修订报告。调用 `revise-building-audit`，再用独立的新回执路径登记 Building gate，保留旧报告、旧回执以及此前已绑定的合同文件。合同有变化时使用新文件路径。修订登记后向用户呈现新报告，取得新的接受和具体步骤授权。原代码审查记录可继续使用。已有明确合同指纹的旧版审计仍按其原记录核验。
 
 Building 交接记录将 `audit_id`、`report_sha256`、`assessment`、代码与规格指纹、`contract_sha256`、`spec_approval_ref`、`report_presented_at`、`accepted_at`、`acceptance_ref` 和已接受限制关联起来。单独登记运行授权的 `audit_id`、`contract_sha256`、`authorized_at`、`user_message_ref`、`steps`。用户在看过 Building Audit 之后，可在一条消息中分别表达接受和运行授权。
 
