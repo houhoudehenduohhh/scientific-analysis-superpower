@@ -21,7 +21,7 @@ flowchart TD
     RAG -- 运行条件问题 --> R
     RAG -- 代码问题 --> B
     RAG -- 科学方案问题 --> P
-    RAG -- 接受且后续已授权 --> R
+    RAG -- 接受且还有后续节点 --> P
     RAG -- 全部节点接受 --> FA[最终全链条结果审计]
     FA --> FAG{最终门禁<br/>用户接受最终审计报告?}
     FAG -- 运行条件或结果缺陷 --> R
@@ -61,7 +61,7 @@ Build Plan 索引独立 Task MD，并记录任务边界与运行依赖。补充�
 
 Task Review 聚焦变更以控制注意力负担；整体审查补查跨任务关系。`diff` 没有发现问题不等于未修改依赖和正式运行都已验证。
 
-## Runtime 如何分批运行和验收
+## Runtime 如何按节点运行和验收
 
 Build Plan 分别列出 **Build Task** 和 **Runtime 步骤**。前者按可独立开发、测试和审查的代码工作划分；后者按正式运行的前置条件和产物排列。一个 Build Task 可以提供多个运行步骤，几个步骤也可以组成一个由用户验收的阶段性节点。步骤与节点的依赖图都不得有环；可并行的步骤不得写入同一可变产物。这个划分在 Proposal 阶段由用户审阅，不由 Agent 在运行时临时决定。
 
@@ -118,12 +118,12 @@ Build Plan 的开发任务与 Runtime 步骤分别编号；步骤图及节点图
 - [Proposal 规则](references/proposal-stage.md)、[Build Plan 模板](templates/build-plan.md)、[Task Spec 模板](templates/task-spec.md)：可执行任务计划。
 - [Building 边界](references/build-stage.md)、[SDD 模块](skills/subagent-driven-development/SKILL.md)、[Building Auditor 提示词](templates/building-auditor-prompt.md)、[Building Audit 模板](templates/building-audit-report.md)。逐任务开发证据供 Agent 恢复，正式审计的任务验收索引供人工验收。
 - [Building Audit 模板](templates/building-audit-report.md)：完整分支审计及用户逐项裁决。
-- [Runtime 规则](references/runtime-stage.md)、[自动步骤审查提示词](templates/runtime-task-reviewer-prompt.md)、[Runtime Audit 规则](references/runtime-audit.md)、[Runtime Finish 规则](references/runtime-finish.md)：分批运行、逐步审查、节点与最终审计及交付。
+- [Runtime 规则](references/runtime-stage.md)、[自动步骤审查提示词](templates/runtime-task-reviewer-prompt.md)、[Runtime Audit 规则](references/runtime-audit.md)、[Runtime Finish 规则](references/runtime-finish.md)：按节点运行、逐步审查、节点与最终审计及交付。
 - `docs/`：设计讨论和人工阅读材料，不是 Agent 的执行入口。
 
 ## 当前验证状态
 
-流程和模板已建立；Building 与 Runtime 的步骤级审查在各自五轮上限内闭环，正式审计仍由用户裁决。SDD 临时材料留存供 Agent 复查。分批 Runtime 的完整执行仍需结合功能单元验证。
+流程和模板已建立；Building 与 Runtime 的步骤级审查在各自五轮上限内闭环，正式审计仍由用户裁决。SDD 临时材料留存供 Agent 复查。按节点执行的完整 Runtime仍需结合功能单元验证。
 
 ## 来源与许可
 

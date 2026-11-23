@@ -65,4 +65,4 @@
 - `audit_user_decision: pending`
 - `accepted_runtime_audit_id: null`
 
-`PASS` 或用户接受限制的 `PASS_WITH_NOTES` 才具备提交用户裁决的条件。节点报告获接受后只解锁获授权的后续节点。最终全链条报告获接受后才可进入 Runtime Finish。新运行、代码、Spec、Plan、Task MD 或受影响结果变化会使当前报告失效，必须重新审查。
+`PASS` 或用户接受限制的 `PASS_WITH_NOTES` 才具备提交用户裁决的条件。节点报告获接受后，按 Harness 路由进入下一节点 Proposal 或最终全链条审计。旧分批计划同一获批范围内的运行依授权衔接。最终全链条报告获接受后才可进入 Runtime Finish。新运行、代码、Spec、Plan、Task MD 或受影响结果变化会使当前报告失效，必须重新审查。

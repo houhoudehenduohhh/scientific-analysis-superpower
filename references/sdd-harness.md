@@ -28,7 +28,7 @@ python skills/subagent-driven-development/scripts/sdd-harness.py verify-task-spe
 
 ## 功能单元 Git 初始化
 
-Proposal 校验 `build_plan.md` 并呈现其中的 `功能单元 Git 根目录`。获批后，协调者在获批目录的 `.tmp/sdd/` 下保存批准记录，例如 `spec-approval-01.json`。记录包含 `build_plan_sha256`、`task_specs`（完整任务 ID 到 SHA-256 的映射）、`approved_at`（含时区）和 `user_message_ref`。
+Proposal 校验 `build_plan.md` 并呈现其中的 `功能单元 Git 根目录`。获批后，协调者在获批目录的 `.tmp/sdd/` 下保存批准记录，例如 `spec-approval-01.json`。记录包含 `build_plan_sha256`、`task_specs`（完整任务 ID 到 SHA-256 的映射）、`approved_at`（含时区）和 `user_message_ref`。新版节点计划还需写入 `node_id`（当前获批节点），旧分批表继续使用 `batch_id`。
 
 Building 默认在获批功能单元上运行以下命令，其中 `WORKTREE` 就是获批目录：
 
@@ -40,13 +40,13 @@ python <Harness路径> init <WORKTREE>/.tmp/sdd/<计划名>/state.json --build-p
 
 旧计划若已有 Harness 状态，且计划的路径和指纹与状态记录一致，可沿用原工作区续跑。首次初始化使用包含功能单元 Git 根目录的获批计划。
 
-## 建设批次
+## 节点交接
 
-新版「阶段性验收节点」表以 `B01`、`B02` 等编号标出建设批次。前置建设要求填写「无」或「N01、N02 已验收」，可接句号和定稿所需的说明。Runtime 前置节点依然决定运行顺序。每个直接负责 Runtime 步骤的 Build Task 归属一个批次，通用工程任务通过现有任务依赖纳入最早需要它的批次。
+新版「阶段性验收节点」表的每一行定义一个建设与运行范围。Spec 批准 JSON 的 `node_id`、`task_specs` 绑定本节点。Building Audit 覆盖当前节点的 Task，Runtime 合同覆盖其步骤。前置建设要求同时提供节点验收依赖，步骤间的依赖按执行图校验。尚未开始的节点可保留 Task Spec 草案。
 
-分批计划的每次 Spec 批准 JSON 均包含 `batch_id`，其 `task_specs` 绑定本批获批任务。Building Audit 及 Runtime 合同只覆盖当前批次。后续批次的 Task Spec 可以先保持草案。
+当前节点已获接受且还有后续节点时，调用 `runtime-next-node` 保存本节点已验收的规格、审计和发布产物。在交接完成后取得下一节点的独立用户批准，再通过 `proposal-rebind` 登记。代码、结果或验收依据未受返工影响的前序节点，可按原证据继续复用。旧证据缺失或指纹不符时，恢复同版本证据再继续。改动影响已验收范围时，从受影响节点开启新的获批周期。
 
-本批节点全部获接受且还有后续批次时，调用 `runtime-next-batch` 归档本批规格和已验收的 Runtime，再通过 `proposal-rebind` 登记下一批的新批准。新批次使用独立的 Building 证据路径、审计编号、运行合同和 `run_id`。上游交接以原审计和已发布产物的指纹为准。旧批次证据缺失或不符时，恢复原路径上的同版本证据再继续。若确需重做已完成的批次，从受影响批次另建获批周期。当前批次交接只支持向后推进。旧版节点表沿用单次 Building Audit 流程。
+已有旧表按原语义运行。旧分批计划使用 `batch_id` 和 `runtime-next-batch`，原历史记录继续按绑定版本核验。
 
 ## 正式审计与工作区
 
@@ -76,13 +76,14 @@ python <Harness路径> init <WORKTREE>/.tmp/sdd/<计划名>/state.json --build-p
 | `runtime-audit <node_id或final_chain> --evidence <审计登记.json>` | 绑定正式审计报告并停在用户门禁。 |
 | `runtime-accept <node_id或final_chain> --evidence <用户接受.json>` | 登记用户对所呈现版本的明确接受。 |
 | `runtime-return <step_id、node_id或final_chain> --evidence <返工裁决.json>` | 绑定当前步骤或正式审计的裁决，按受影响范围返工或交回上游。 |
-| `runtime-next-batch` | 核对本批所有里程碑的 Runtime Audit 已获接受，归档当前周期并进入下一批 Proposal。 |
-| `proposal-rebind --build-plan <修订的build_plan.md> --evidence <新Spec批准.json>` | 在 Runtime 返回 Proposal 或完成建设批次交接后登记用户新批准的计划和任务指纹，开始新 Building 周期。 |
+| `runtime-next-node` | 核对当前节点已获接受，归档当前周期并进入下一节点 Proposal。 |
+| `runtime-next-batch` | 旧分批计划在本批所有节点获接受后使用。 |
+| `proposal-rebind --build-plan <修订的build_plan.md> --evidence <新Spec批准.json>` | 从 Runtime 或节点交接返回 Proposal 后登记当前范围已批准的新版规格，开始新的 Building 周期。 |
 | `runtime-finish --artifact <交付说明.md>` | 核对最终审计接受和证据身份，登记交付说明。 |
 
 协调者负责从对话取得真实的用户裁决、派发独立 Agent 并记录身份。Harness 校验提交给它的版本、范围、字段和证据，聊天用户与子 Agent 身份由调用方提供。
 
-合同记录 `run_id`、`code_root`、`code_commit`、`build_plan_sha256`、`task_specs`、`inputs`、`nodes` 和 `steps`。节点与步骤的 `needs` 从获批计划转录，步骤还绑定 `node`、`task_id`、`acs`、输入和输出、配置、命令参数数组以及 `resources.timeout_seconds`。当前 CLI 串行执行步骤，同节点内仍按依赖关系选择下一步。
+合同记录 `run_id`、`code_root`、`code_commit`、`build_plan_sha256`、`task_specs`、`inputs`、`nodes` 和 `steps`。新版合同的节点 `needs` 取自「前置建设要求」，步骤 `needs` 取自 Runtime 执行图的前置步骤，步骤还绑定 `node`、`task_id`、`acs`、输入和输出、配置、命令参数数组以及 `resources.timeout_seconds`。当前 CLI 串行执行步骤，同节点内仍按依赖关系选择下一步。
 
 步骤使用获批的可执行文件绝对路径和 `executable_sha256`。配置可为空，提供时将路径和 SHA-256 写入 `config`。命令参数用独立的 `{input:输入ID}`、`{output:逻辑路径}`、`{output-dir:results/data}`、`{upstream:步骤ID:逻辑路径}` 等参数引用受绑定文件。需要调用外部或未跟踪的脚本时，显式列入 `code_inputs` 并绑定内容。运行所需的环境变量从 `environment` 声明。为保持代码来源一致，运行工作树中的未跟踪代码文件也须纳入绑定或移出运行工作树。
 
@@ -100,6 +101,6 @@ Runtime 内返工记录绑定本次 `step_run_hash` 或审计 `scope_hash` 并�
 
 返回 Building 或 Proposal 后，`state.json` 的 `building_history` 和 `runtime_history` 保留旧周期证据，新周期重新注册任务、累积任务修复轮次并生成 Building Audit。为新周期的账本、报告、合同、裁决、运行授权使用新路径，并采用新的 `audit_id` 和 `run_id`。返回 Building 时沿用现有已批准规格，以新提交经过 Building Audit 并登记用户新的接受与运行授权。
 
-返回 Proposal 时，Harness 先将已批准的 Build Plan 和 Task MD 快照写入 `<state.json 所在目录>/history/<旧 run_id>/`。此后可在规范路径修订文档，使用 `status` 查看归档。用户批准修订版后，将文档的 `decision` 和 `approval_status` 更新为 `approved`，计算最终 SHA-256。`proposal-rebind` 接收 `build_plan_sha256`、`task_specs`（完整任务 ID 到 SHA-256 的映射）、`approved_at`（含时区的时间）和 `user_message_ref`（返工裁决之后的新批准消息）。重绑定后逐个注册这些 Task MD 并走完整 Building 流程。新的 `runtime-init` 接受记录用 `spec_approval_ref` 引用本次批准消息，另行登记运行授权。
+返回 Proposal 时，Harness 先将已批准的 Build Plan 和 Task MD 快照写入 `<state.json 所在目录>/history/<旧 run_id>/`。此后可在规范路径修订文档，使用 `status` 查看归档。用户批准修订版后，将文档的 `decision` 和 `approval_status` 更新为 `approved`，计算最终 SHA-256。`proposal-rebind` 接收 `build_plan_sha256`、`task_specs`（完整任务 ID 到 SHA-256 的映射）、`approved_at`（含时区的时间）和 `user_message_ref`（返工裁决之后的新批准消息）。新版节点计划同样须登记当前获批的 `node_id`。重绑定后逐个注册这些 Task MD 并走完整 Building 流程。新的 `runtime-init` 接受记录用 `spec_approval_ref` 引用本次批准消息，另行登记运行授权。
 
 已开始但没有结束记录的尝试须先核对进程。确认已停后，用 `run_id`、`step_id`、`attempt`、`started_at`、`confirmed_not_running: true`、`operator`、`reason` 和 `observed_at` 登记中断。该尝试仍须经过独立步骤审查才可重试。

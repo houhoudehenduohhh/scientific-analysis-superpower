@@ -6,7 +6,7 @@
 
 - 当前 `build_plan.md` 与本轮 Task MD 已获用户明确批准，源数据身份及资格已确定。方案或数据口径发生实质变化时返回 Proposal；Build Plan 的实质变更先交用户确认。
 - 从 Build Plan「目标与边界」读取获批的 `功能单元 Git 根目录`。Building 在该目录复用或建立独立仓库。上层仓库已跟踪该单元时，列出冲突并交用户处理；上层的 Git 历史和索引由用户管理，Agent 不得自行移动或备份上层 .git 来绕过冲突。
-- 默认在获批功能单元根目录执行。已有 Harness 状态时续用已绑定工作树。同一计划的各批次、实现、审计和返工共用该工作树。确需新建隔离 worktree 时，先由用户明确批准完整路径，再按 Harness 规则登记。
+- 默认在获批功能单元根目录执行。已有 Harness 状态时续用已绑定工作树。同一计划的各节点、实现、审计和返工共用该工作树。确需新建隔离 worktree 时，先由用户明确批准完整路径，再按 Harness 规则登记。
 - 使用 [Harness 的 Git 初始化命令](sdd-harness.md#功能单元-git-初始化)登记获批计划。新仓库建立空基线，需进入版本控制的文件按任务范围明确暂存。
 - 在已确定的最小功能单元内核对 `specs/`、`scripts/`、`results/`、`reports/`、`audits/` 的职责边界；按已批准计划建立本阶段实际需要的 `scripts/build/`、`scripts/config/`、`scripts/pytest/`、`scripts/smoke_test/`、`scripts/logs/`、`results/smoke_test/`、`audits/building/`。`reports/` 与 `audits/` 只放 Markdown 正式文档，不为追求目录齐全创建空占位文件。
 - 在有首个提交的 Git 工作树中执行。每个任务开始前记录 `BASE`，实现和修复各自提交，再以对应 `BASE..HEAD` 生成审查差异。派审前检查未提交改动，避免遗漏待审代码。提交只固定待审版本，不代表任务通过。
@@ -25,4 +25,4 @@
 ## 返工与门禁
 
 - 每个任务由独立 Reviewer 对契约符合性和代码质量作双重结论，Agent 在已批准计划内自动完成任务级修复及局部复审，不设置逐任务人工门禁。每任务最多五轮；仍有实质缺陷时暂停依赖任务，带完整证据交用户决定。非阻断问题如实列入最终报告，由用户决定是否接受。
-- 本次建设范围的全部任务结束后，按 [最终 Review 规则](../skills/subagent-driven-development/references/final-review.md)由一名独立 Reviewer 审查本批整段代码变更；可修复的实现缺陷最多集中修复一次并局部复审。初审与复审先存 SDD 临时工作区；循环结束后才在获批功能单元根目录的 `audits/building/` 直接形成一份 [正式 Building Audit 报告](../templates/building-audit-report.md)，关联当前 Spec、Plan、代码提交、任务审查和验证证据。正式报告生成即停止，用户接受前不得进入 Runtime。
+- 本次建设范围的全部任务结束后，按 [最终 Review 规则](../skills/subagent-driven-development/references/final-review.md)由一名独立 Reviewer 审查当前建设范围的整段代码变更；可修复的实现缺陷最多集中修复一次并局部复审。初审与复审先存 SDD 临时工作区；循环结束后才在获批功能单元根目录的 `audits/building/` 直接形成一份 [正式 Building Audit 报告](../templates/building-audit-report.md)，关联当前 Spec、Plan、代码提交、任务审查和验证证据。正式报告生成即停止，用户接受前不得进入 Runtime。
