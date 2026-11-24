@@ -129,7 +129,18 @@ Subagent (general-purpose):
     - Edge cases handled?
 
     **Tests:**
-    - Do the new and changed tests verify real behavior, not mocks?
+    - For each new or changed production-critical dependency boundary,
+      check the production call path, the test's assertions, and the
+      recorded command, environment, and outcome. Return CHANGES_REQUIRED
+      if an available real interface was only mocked, a required real
+      test was skipped or not run, or its assertions do not verify the
+      acceptance behavior.
+    - If a real dependency is unavailable, check the recorded reason and
+      the real checks of available components. A deferred check must be
+      allowed by the approved plan, remain pending, and be specified in
+      the target environment before production execution. Return
+      CHANGES_REQUIRED if this evidence or those conditions are missing.
+      Mocked failures may supplement this evidence.
     - Are the task's edge cases covered?
 
     **Structure:**
