@@ -63,6 +63,18 @@ Subagent (general-purpose):
     documentation-only, and generated-file changes may omit TDD with the
     reason recorded in the report.
 
+    For a new or changed production-critical dependency boundary, run at
+    least one focused pytest or smoke test through the implementation's
+    actual call path against the real dependency when it is available.
+    Use a minimal valid fixture and assert the expected result, state, or
+    artifact. Record the command, test environment, and observed result.
+    Use mocks as needed for controlled failure cases or to isolate an
+    unavailable external part. If a real call cannot run in Building,
+    exercise the available installed components, record the unavailable
+    prerequisite and unverified behavior, and leave the complete call
+    pending. Defer it only as allowed by the approved plan, with a minimal
+    real check in the target environment before production execution.
+
     While iterating, run the focused test for what you're changing; run the
     full suite once before committing, not after every edit.
 
