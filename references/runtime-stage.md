@@ -6,7 +6,7 @@
 
 在**每次正式运行前**核对并记录：
 
-1. 当前 `build_plan.md` 及拟执行步骤引用的 Task MD 已获批准，源数据身份、资格与目标输出仍适用；
+1. 当前 Proposal 的 Build Plan 及拟执行步骤引用的 Task MD 已获批准，源数据身份、资格与目标输出仍适用；
 2. Building Audit 的结论为 `PASS`，或用户已明确接受 `PASS_WITH_NOTES` 的限制；`audit_user_decision=accepted`、`accepted_audit_id=audit_id`，且用户在看到这份报告后的后续消息明确授权运行；
 3. 待运行的代码提交与该 Building Audit 审查的 `HEAD` 一致；受审代码、依赖或会改变计算语义的配置若已变更，先返回 Building；
 4. 实际输入与 Build Plan 和 Task MD 的批准身份、版本和资格相符；写入目录、命令及预计资源在获批范围内。
@@ -66,4 +66,4 @@ assert no_unreviewed_upstream_output_is_used
 
 当前获准验收节点的步骤完成后停止并进入[节点 Runtime Audit](runtime-audit.md)；未完成时保留事实和返工记录，按上方自动循环或返回阶段处理。正式节点审计一经生成即停在用户门禁，不得自行批准后续节点。所有节点接受后再进行独立的全链条结果审计；未获接受前不得 Runtime Finish。
 
-扩展任务按完整 Task ID 和 AC 绑定运行证据。复用产物前核对身份、接口和资格，并沿批准依赖图重验受影响输出。
+任务按完整 Task ID 和 AC 绑定运行证据。复用产物前核对身份、接口和资格，并沿批准依赖图重验受影响输出。
