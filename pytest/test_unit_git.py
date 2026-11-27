@@ -136,6 +136,55 @@ def test_approved_siblings_have_independent_head_state_and_evidence(parent):
     assert denied.returncode != 0 and "outside" in denied.stderr
 
 
+def test_two_proposals_in_one_unit_use_separate_workspaces(parent):
+    unit = parent / "single-unit"
+    first_plan, first_task = write_proposal(
+        unit, proposal_dir="specs/proposal-01-baseline", plan_name="build_plan_p01.md", batched=True,
+    )
+    second_plan, second_task = write_proposal(
+        unit, proposal_dir="specs/proposal-02-follow-up", plan_name="build_plan_p02.md", task_id="T02", batched=True,
+    )
+    upstream = Path(os.path.relpath(first_task, second_task.parent)).as_posix()
+    file(second_task, second_task.read_text(encoding="utf-8").replace(
+        "## 上下游影响\n", f"## 上下游影响\n- 承接的 Proposal／Task：[P01 / T01]({upstream})\n",
+    ))
+
+    workspaces = []
+    original_evidence = {}
+    for plan, task, task_id in ((first_plan, first_task, "T01"), (second_plan, second_task, "T02")):
+        state = unit / ".tmp/sdd" / plan.stem / "state.json"
+        for result in (cli("verify-build-plan", state, "--artifact", plan),
+                       cli("verify-task-spec", state, "--artifact", task, "--build-plan", plan)):
+            assert result.returncode == 0, result.stderr
+
+        file(plan, plan.read_text(encoding="utf-8").replace("decision: pending", "decision: approved"))
+        file(task, task.read_text(encoding="utf-8").replace("approval_status: pending", "approval_status: approved"))
+        receipt = file(state.parent / "spec-approval.json", json.dumps({
+            "build_plan_sha256": hash_file(plan), "task_specs": {task_id: hash_file(task)},
+            "batch_id": "B01", "approved_at": datetime.now(timezone.utc).isoformat(),
+            "user_message_ref": f"approval-{task_id}",
+        }))
+        initialized = cli("init", state, "--build-plan", plan, "--evidence", receipt)
+        assert initialized.returncode == 0, initialized.stderr
+        bound_state = json.loads(state.read_text(encoding="utf-8"))
+        assert Path(bound_state["refs"]["build_plan"]["path"]) == plan.resolve()
+        assert bound_state["spec_approval"]["task_specs"] == {task_id: hash_file(task)}
+        resolved = cli("resolve-workspace", plan, task_id, "--evidence", task, "--worktree", unit)
+        assert resolved.returncode == 0, resolved.stderr
+        assert Path(resolved.stdout.strip()) == state.parent.resolve()
+        workspaces.append(resolved.stdout.strip())
+        if plan == first_plan:
+            original_evidence = {record: record.read_bytes() for record in (state, receipt)}
+
+    assert len(set(workspaces)) == 2
+    assert all(record.read_bytes() == content for record, content in original_evidence.items())
+    resumed = cli("resolve-workspace", first_plan, "T01", "--evidence", first_task, "--worktree", unit)
+    assert resumed.returncode == 0, resumed.stderr
+    assert resumed.stdout.strip() == workspaces[0]
+    wrong_task = cli("resolve-workspace", second_plan, "T02", "--evidence", first_task, "--worktree", unit)
+    assert wrong_task.returncode != 0 and "approved Task MD bytes" in wrong_task.stderr
+
+
 @pytest.mark.parametrize("nested_exists", [False, True])
 @pytest.mark.parametrize("staged_deletion", [False, True])
 def test_parent_tracking_blocks_and_reports_files(parent, nested_exists, staged_deletion):

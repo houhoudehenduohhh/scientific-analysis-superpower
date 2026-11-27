@@ -32,7 +32,7 @@ flowchart TD
 
 | 阶段 | 主要工作 | 主要产物与停止点 |
 |---|---|---|
-| **Proposal** | 讨论研究目标、源数据、边界和算法方向，生成 Build Plan、Task MD 及无环 Runtime 步骤图。 | `specs/build_plan.md` 与 `specs/tasks/` 下的本轮 Task MD。停在 **Spec Gate**，等待用户批准当前版本。 |
+| **Proposal** | 讨论研究目标、源数据、边界和算法方向，生成 Build Plan、Task MD 及无环 Runtime 步骤图。 | 本轮 `specs/proposal-<序号>-<主题>/` 下的 Build Plan 和 Task MD。停在 **Spec Gate**，等待用户批准当前版本。 |
 | **Building / SDD** | 在隔离的 Git 工作区按计划逐任务执行 TDD、实现、提交、独立 Task Review 和必要的修复复审。 | 代码、测试、临时技术账本及每任务一份人工验收报告；完成后进行完整分支审查。 |
 | **Building Audit** | 一名独立 Reviewer 追溯 Spec、Plan、代码、测试及任务审查，形成正式报告。 | `audits/building/` 下的报告绑定当前提交，汇总并链接各任务人工报告；停在 **Building Audit Gate**。 |
 | **Runtime** | 按获准的步骤图执行；每步自动独立审查，运行条件问题最多五轮修复复审。 | 正式结果、运行日志及 SDD 工作区的逐步事实记录。只有经独立审查的步骤才能解锁同节点依赖。 |
@@ -41,7 +41,7 @@ flowchart TD
 
 ## SDD 怎样开发一个任务
 
-Build Plan 索引独立 Task MD，并记录任务边界与运行依赖。补充任务和父任务放在同一目录，使用各自的 ID 和验收记录。Building 不重新制定科学方案，而是按批准的计划执行：
+Build Plan 索引独立 Task MD，并记录任务边界与运行依赖。前轮完成后的补充研究开新 Proposal，用普通 Task 承接前轮任务，并引用复用产物和验收记录。Building 不重新制定科学方案，而是按批准的计划执行：
 
 1. 建立或核对隔离工作树，为本份计划创建 `.tmp/sdd/` 临时账本，并检查任务之间的依赖与接口冲突。
 2. 从 Build Plan 提取 **Task N brief**，派独立实现 Agent。按 TDD 先用有独立依据的预期写失败测试，再做最小实现、重构、自查和 Git 提交。

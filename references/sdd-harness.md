@@ -20,7 +20,7 @@ building_audit_gate → runtime_authorized
 在注册或派发每个任务前，协调者必须运行：
 
 ```text
-python skills/subagent-driven-development/scripts/sdd-harness.py verify-build-plan <state.json> --artifact <build_plan.md>
+python skills/subagent-driven-development/scripts/sdd-harness.py verify-build-plan <state.json> --artifact <Build-Plan.md>
 python skills/subagent-driven-development/scripts/sdd-harness.py verify-task-spec <state.json> --artifact <Task-Spec.md> --build-plan <Build-Plan.md>
 ```
 
@@ -28,7 +28,7 @@ python skills/subagent-driven-development/scripts/sdd-harness.py verify-task-spe
 
 ## 功能单元 Git 初始化
 
-Proposal 校验 `build_plan.md` 并呈现其中的 `功能单元 Git 根目录`。获批后，协调者在获批目录的 `.tmp/sdd/` 下保存批准记录，例如 `spec-approval-01.json`。记录包含 `build_plan_sha256`、`task_specs`（完整任务 ID 到 SHA-256 的映射）、`approved_at`（含时区）和 `user_message_ref`。
+Proposal 校验本轮 Build Plan 并呈现其中的 `功能单元 Git 根目录`。获批后，协调者在获批功能单元下按本轮计划保存批准记录，例如 `.tmp/sdd/build_plan_p02/spec-approval-01.json`。后续节点或修订使用新的回执文件。记录包含 `build_plan_sha256`、`task_specs`（完整任务 ID 到 SHA-256 的映射）、`approved_at`（含时区）和 `user_message_ref`。分批计划还需写入当前获批范围的 `batch_id`。
 
 Building 默认在获批功能单元上运行以下命令，其中 `WORKTREE` 就是获批目录：
 
@@ -37,6 +37,8 @@ python <Harness路径> init <WORKTREE>/.tmp/sdd/<计划名>/state.json --build-p
 ```
 
 先用 `git worktree list` 检查此计划是否已有初始化状态。已有状态时按原路径恢复。用户明确批准隔离工作树和完整绝对路径后，在 Spec 批准 JSON 中登记 `worktree_path`。如需建立基线，用 `prepare-git <PLAN> --evidence <批准记录.json>`，然后在该路径准备同仓库的 Git 工作树。将 `init` 的状态路径指向该工作树下的 `.tmp/sdd/<计划名>/state.json`。若传入 `--worktree`，必须与批准路径一致。Build Plan、Task MD 和批准记录仍使用功能单元中的原文件。
+
+这里的 `<计划名>` 是本轮 Build Plan 去掉 `.md` 的文件名。前一轮已完成且新一轮的规格已获批准时，用新计划、新批准记录和对应状态路径调用 `init`。同一计划内的返工或批次交接按现有流程重新绑定。
 
 旧计划若已有 Harness 状态，且计划的路径和指纹与状态记录一致，可沿用原工作区续跑。首次初始化使用包含功能单元 Git 根目录的获批计划。
 
@@ -60,7 +62,7 @@ python <Harness路径> init <WORKTREE>/.tmp/sdd/<计划名>/state.json --build-p
 
 新计划的合同、交接和运行回执保存在本次工作树的 `.tmp/sdd/<计划名>/runtime/<run_id>/evidence/`。Harness 写入的尝试与节点事实记录在同次运行的 `reports/`，独立步骤审查在 `reviews/`。旧运行按原绑定路径恢复。科学输入可使用方案已批准的外部路径，合同继续记录其身份和指纹。
 
-新计划的运行输出先写入对应运行的 `attempts/`。节点获接受时，Harness 核验并发布到 `results/<data、plot 或 smoke_test>/<运行版本>/<逻辑路径>`，保留旧次结果。完成所有节点验收后另做最终全链条审计，单节点也使用同一流程。
+新一轮 Proposal 使用功能单元内未用过的 `run_id`，因为正式产物在功能单元内按运行版本发布。新计划的运行输出先写入对应运行的 `attempts/`。节点获接受时，Harness 核验并发布到 `results/<data、plot 或 smoke_test>/<运行版本>/<逻辑路径>`，保留旧次结果。完成所有节点验收后另做最终全链条审计，单节点也使用同一流程。
 
 | 命令 | 输入及职责 |
 |---|---|
@@ -78,7 +80,7 @@ python <Harness路径> init <WORKTREE>/.tmp/sdd/<计划名>/state.json --build-p
 | `runtime-accept <node_id或final_chain> --evidence <用户接受.json>` | 登记用户对所呈现版本的明确接受。 |
 | `runtime-return <step_id、node_id或final_chain> --evidence <返工裁决.json>` | 绑定当前步骤或正式审计的裁决，按受影响范围返工或交回上游。 |
 | `runtime-next-batch` | 核对本批所有里程碑的 Runtime Audit 已获接受，归档当前周期并进入下一批 Proposal。 |
-| `proposal-rebind --build-plan <修订的build_plan.md> --evidence <新Spec批准.json>` | 在 Runtime 返回 Proposal 或完成建设批次交接后登记用户新批准的计划和任务指纹，开始新 Building 周期。 |
+| `proposal-rebind --build-plan <修订的 Build Plan 路径> --evidence <新Spec批准.json>` | 在 Runtime 返回 Proposal 或完成建设批次交接后登记用户新批准的计划和任务指纹，开始新 Building 周期。 |
 | `runtime-finish --artifact <交付说明.md>` | 核对最终审计接受和证据身份，登记交付说明。 |
 
 协调者负责从对话取得真实的用户裁决、派发独立 Agent 并记录身份。Harness 校验提交给它的版本、范围、字段和证据，聊天用户与子 Agent 身份由调用方提供。

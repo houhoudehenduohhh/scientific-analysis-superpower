@@ -16,12 +16,15 @@ AUDIT_HEADER = "| 任务 ID | 任务目的 | AC ID | 成功条件 | 完成情况
 AUDIT_ROW = "| T01 | Produce counts | T01-AC01 | Outputs a count | PASS. Known input counted. |"
 
 
-def write_proposal(tmp_path):
-    tasks = tmp_path / "specs/tasks/task-01"
+def write_proposal(tmp_path, *, proposal_dir="specs", plan_name="build_plan.md",
+                   task_id="T01", batched=False):
+    specs = tmp_path / proposal_dir
+    task_name = f"task-{task_id[1:].lower()}"
+    tasks = specs / "tasks" / task_name.split("-ext")[0]
     tasks.mkdir(parents=True)
-    task = tasks / "task-01.md"
-    task.write_text("""# Task T01 · Count
-- 任务 ID：T01
+    task = tasks / f"{task_name}.md"
+    task.write_text(f"""# Task {task_id} · Count
+- 任务 ID：{task_id}
 - 父任务 ID（无则填无）：无
 - 变更类型（原始／新增／替换）：原始
 - 任务目的：Produce counts
@@ -31,12 +34,19 @@ def write_proposal(tmp_path):
 ## 验收与验证
 | AC ID（完整任务 ID + -ACNN） | 验收目标 | 可观察的成功条件 | 验证方式 | 验证阶段 | 当前状态 |
 |---|---|---|---|---|---|
-| T01-AC01 | Count | Outputs a count | fixture | Building | 未验证 |
+| {task_id}-AC01 | Count | Outputs a count | fixture | Building | 未验证 |
 ## 上下游影响
 ## 审批引用
 - approval_status: pending
 """, encoding="utf-8")
-    plan = tmp_path / "specs/build_plan.md"
+    if batched:
+        node_header = ("| 节点 ID | 节点目的 | 建设批次 | 前置建设要求 | 包含的运行步骤 | "
+                       "Runtime 前置节点 | 阶段性成果与验收条件 |")
+        node_row = "| N01 | Count | B01 | 无 | R01 | 无 | Outputs |"
+    else:
+        node_header = "| 节点 ID | 节点目的 | 包含的运行步骤 | 前置节点 | 阶段性成果与验收条件 | 用户授权范围 |"
+        node_row = "| N01 | Count | R01 | 无 | Outputs | All |"
+    plan = specs / plan_name
     plan.write_text(f"""# Build Plan（构建计划）
 ## 目标与边界
 - 功能单元 Git 根目录：`{tmp_path}`
@@ -44,26 +54,26 @@ def write_proposal(tmp_path):
 ### 拟得到的输出
 | 输出 ID | 输出名称 | 逻辑路径 | 内容与用途 | 生成阶段 | 验收依据 |
 |---|---|---|---|---|---|
-{OUTPUT}
-| O02 | Plot | results/plot/count.png | Plot | Runtime | T01-AC01 |
-| O03 | Smoke | results/smoke_test/example/report.md | Smoke | Building | T01-AC01 |
+{OUTPUT.replace("T01-AC01", f"{task_id}-AC01")}
+| O02 | Plot | results/plot/count.png | Plot | Runtime | {task_id}-AC01 |
+| O03 | Smoke | results/smoke_test/example/report.md | Smoke | Building | {task_id}-AC01 |
 ## 项目目录结构
 - path_schema: 1
 | 任务 ID | 主入口路径 | 变更（新增／既有／迁移） |
 |---|---|---|
-{ENTRY}
+{ENTRY.replace("T01", task_id)}
 ## 任务清单
 | 任务 ID | Task MD | 目的与边界 | 前置任务／产物 | 相关 AC |
 |---|---|---|---|---|
-| T01 | [Task MD](tasks/task-01/task-01.md) | Count | 无 | T01-AC01 |
+| {task_id} | [Task MD]({task.relative_to(specs).as_posix()}) | Count | 无 | {task_id}-AC01 |
 ## Runtime 执行图
 | 运行步骤 ID | 对应任务 | 前置步骤或节点 | 输入与输出 | 可并行步骤／互斥条件 | 完成检查 |
 |---|---|---|---|---|---|
-| R01 | T01 | 无 | Count | 无 | Smoke |
+| R01 | {task_id} | 无 | Count | 无 | Smoke |
 ## 阶段性验收节点
-| 节点 ID | 节点目的 | 包含的运行步骤 | 前置节点 | 阶段性成果与验收条件 | 用户授权范围 |
-|---|---|---|---|---|---|
-| N01 | Count | R01 | 无 | Outputs | All |
+{node_header}
+{"|---" * (node_header.count("|") - 1)}|
+{node_row}
 ## 批准
 - decision: pending
 """, encoding="utf-8")
@@ -93,6 +103,15 @@ def test_canonical_proposal_paths_are_accepted(proposal):
     plan, task = proposal
     assert verify(plan).returncode == 0
     assert verify(plan, task).returncode == 0
+
+
+def test_historical_extra_task_keeps_its_spec_path(tmp_path):
+    plan, task = write_proposal(tmp_path, task_id="T01-EXT01")
+    replace(task, "父任务 ID（无则填无）：无", "父任务 ID（无则填无）：T01")
+
+    assert task.relative_to(tmp_path).as_posix() == "specs/tasks/task-01/task-01-ext01.md"
+    for result in (verify(plan), verify(plan, task)):
+        assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize("path", ["main.py", "scripts/build/../main.py", "scripts/build/NUL.py",

@@ -1,6 +1,6 @@
 # Build Plan（构建计划）
 
-> Proposal 阶段生成，用户批准后供 Building 和 Runtime 使用。本文档是功能单元的总计划，不替代单个 Task MD。
+> Proposal 阶段生成，用户批准后供 Building 和 Runtime 使用。本文档是本轮 Proposal 的执行计划。任务详情见本轮 Task MD。
 
 ## 目标与边界
 
@@ -10,6 +10,9 @@
 - 交付范围：
 - 不在本轮处理的内容：
 - 预期主要输出：
+- 继承依据（首次填无）：前轮已批准的计划／Task、继续适用的口径，以及拟复用产物和对应验收记录。
+- 本轮变化：新增或替换的范围。替换时说明影响的前轮口径或下游产物。
+- 重验范围（无则填无）：需重新验证的产物、接口或验收条件。
 
 ## 源数据、算法与输出
 
@@ -46,7 +49,7 @@
 
 ```text
 <functional-unit>/
-├── specs/              # Build Plan 与 Task MD
+├── specs/              # 每轮 Proposal 的 Build Plan 与 Task MD
 ├── scripts/
 │   ├── build/          # 主实现脚本
 │   ├── config/         # 配置与输入指纹
